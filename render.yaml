@@ -1,0 +1,69 @@
+# Sentra Bot - Render Blueprint.
+#
+# One public Web Service ("sentrabot") running api + worker + web in a
+# single Docker container via infra/render/supervisor.mjs. Database is
+# Supabase (external) - no Render Postgres is declared here.
+#
+# Secrets (sync: false) are NOT set here and must be filled in manually via
+# Render Dashboard -> sentrabot -> Environment, per the deployment runbook.
+# Do not put real values in this file or in git.
+#
+# Plan: starts on "free" for a first demo. Read the runbook before
+# switching to "starter" - that change costs money and needs explicit
+# approval; do not upgrade this file's plan/disk without that approval.
+services:
+  - type: web
+    name: sentrabot
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: infra/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: "3100"
+      - key: WEB_INTERNAL_PORT
+        value: "5173"
+      - key: WAKEUP_DRIVER
+        value: graphile
+      - key: AGENT_RUNTIME
+        value: pi
+      - key: SANDBOX_PROVIDER
+        value: e2b
+      - key: SIGNUPS_ENABLED
+        value: "true"
+      - key: DATA_DIR
+        value: /data
+      - key: RAKAZO_HOST
+        value: sentrabot.onrender.com
+      - key: BETTER_AUTH_URL
+        value: https://sentrabot.onrender.com
+      - key: WEB_ORIGIN
+        value: https://sentrabot.onrender.com
+      - key: API_URL
+        value: https://sentrabot.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: REALTIME_DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: SIGNUP_ALLOWLIST
+        sync: false
+      - key: E2B_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+    # disk:
+    #   name: sentrabot-data
+    #   mountPath: /data
+    #   sizeGB: 10
