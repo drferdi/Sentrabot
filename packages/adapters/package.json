@@ -1,0 +1,33 @@
+{
+  "name": "@rakazo/adapters",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/adapters/src"
+  },
+  "dependencies": {
+    "@asciidev/box-sdk": "^0.0.28",
+    "@composio/core": "0.16.0",
+    "@daytona/sdk": "^0.204.1",
+    "@e2b/desktop": "^2.3.1",
+    "@earendil-works/pi-agent-core": "^0.84.1",
+    "@earendil-works/pi-ai": "^0.84.1",
+    "@rakazo/adapter-kit": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
+    "@rakazo/db": "workspace:*",
+    "graphile-worker": "^0.17.3",
+    "pg": "^8.16.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

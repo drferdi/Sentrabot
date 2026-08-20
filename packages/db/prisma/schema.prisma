@@ -1,0 +1,597 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  invitations   Invitation[]
+  modelCredentials UserModelCredential[]
+  secrets          Secret[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id                     String   @id
+  expiresAt              DateTime
+  token                  String
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  ipAddress              String?
+  userAgent              String?
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId   String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  members     Member[]
+  invitations Invitation[]
+  bots        Bot[]
+  botDeletions BotDeletion[]
+  threads     Thread[]
+  events      Event[]
+  tasks       Task[]
+  runs        Run[]
+  routines    Routine[]
+  connections Connection[]
+  capabilities CapabilityInstall[]
+  memoryDocuments MemoryDocument[]
+  agentHomes  AgentHome[]
+  browserProfiles BrowserProfile[]
+  artifacts   Artifact[]
+  usageRecords UsageRecord[]
+  notificationPreferences NotificationPreference[]
+  computers   Computer[]
+  externalEffects ExternalEffect[]
+
+  @@unique([slug])
+  @@map("organization")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String
+  createdAt      DateTime
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String
+  expiresAt      DateTime
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
+}
+
+model DeploymentSettings {
+  id                             String   @id @default("default")
+  ownerUserId                    String?
+  signupsEnabled                 Boolean  @default(true)
+  signupAllowlist                String   @default("")
+  defaultModelProvider           String?
+  defaultModelId                 String?
+  deploymentModelCredentialCipher String?
+  computerHost                   String?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  @@map("deployment_settings")
+}
+
+model UserModelCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  provider     String
+  label        String
+  secretId     String
+  isDefault    Boolean  @default(false)
+  defaultModel String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, workspaceId])
+  @@map("user_model_credentials")
+}
+
+model Bot {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  workspace      Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  name           String
+  title          String   @default("")
+  description    String   @default("")
+  instructions   String   @default("")
+  color          String
+  notifyOnFinish Boolean  @default(true)
+  pinned         Boolean  @default(false)
+  archivedAt     DateTime?
+  parentBotId    String?
+  spawnKey       String?
+  parent         Bot?     @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
+  children       Bot[]    @relation("BotChildren")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  thread         Thread?
+  computerId     String?
+  computer       Computer? @relation(fields: [computerId], references: [id], onDelete: SetNull)
+  computerSwitching Boolean @default(false)
+  routines       Routine[]
+  memoryDocuments MemoryDocument[]
+  agentHome      AgentHome?
+  browserProfile BrowserProfile?
+  artifacts      Artifact[]
+  usageRecords   UsageRecord[]
+  tasks          Task[]
+  runs           Run[]
+
+  @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
+  @@index([computerId])
+  @@index([parentBotId])
+  @@unique([workspaceId, spawnKey])
+  @@map("bots")
+}
+
+model BotDeletion {
+  id                String   @id
+  workspaceId       String
+  workspace         Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name              String
+  deletedByUserId   String
+  memoriesPreserved Boolean
+  deletedAt         DateTime @default(now())
+
+  @@index([workspaceId, deletedAt])
+  @@map("bot_deletions")
+}
+
+model Thread {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String   @unique
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime @default(now())
+  nextEventSeq   Int   @default(0)
+  nextMessageSeq Int   @default(0)
+  unread      Boolean  @default(false)
+  messages    Message[]
+  events      Event[]
+  tasks       Task[]
+  runs        Run[]
+
+  @@index([workspaceId])
+  @@map("threads")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  threadId  String
+  thread    Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  seq       Int
+  role      String
+  blocks    Json
+  runId     String?
+  createdAt DateTime @default(now())
+
+  @@unique([threadId, seq])
+  @@index([threadId, seq])
+  @@map("messages")
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  botId       String
+  seq         Int
+  type        String
+  payload     Json
+  runId       String?
+  createdAt   DateTime @default(now())
+
+  @@unique([threadId, seq])
+  @@index([workspaceId, createdAt])
+  @@index([threadId, seq])
+  @@index([runId, type, seq])
+  @@map("events")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId      String
+  prompt      String
+  status      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  runs        Run[]
+
+  @@index([workspaceId, botId])
+  @@map("tasks")
+}
+
+model Run {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId         String
+  bot           Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  threadId      String
+  thread        Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  taskId        String
+  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId        String
+  status        String
+  trigger       String
+  modelProvider String?
+  modelId       String?
+  error         String?
+  leaseOwner    String?
+  leaseFence    Int       @default(0)
+  leaseExpiresAt DateTime?
+  checkpoint    String?
+  clientNonce   String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  attempts      Attempt[]
+  effects       ExternalEffect[]
+  usageRecords  UsageRecord[]
+
+  @@unique([workspaceId, clientNonce])
+  @@index([status, leaseExpiresAt])
+  @@index([status, updatedAt, id])
+  @@index([workspaceId, botId])
+  @@map("runs")
+}
+
+model Attempt {
+  id         String   @id @default(cuid())
+  runId      String
+  run        Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  fence      Int
+  status     String
+  error      String?
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  @@index([runId])
+  @@map("attempts")
+}
+
+model ExternalEffect {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  workspace       Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runId           String
+  run             Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  kind            String
+  idempotencyKey  String
+  status          String
+  request         Json
+  result          Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([idempotencyKey])
+  @@index([runId, status])
+  @@map("external_effects")
+}
+
+model Routine {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  prompt      String
+  cron        String
+  timezone    String    @default("UTC")
+  active      Boolean   @default(false)
+  notify      Boolean   @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([active, nextRunAt])
+  @@index([workspaceId, botId])
+  @@map("routines")
+}
+
+model Connection {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  workspace     Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  provider      String
+  displayName   String
+  status        String
+  secretId      String?
+  providerRef   String?
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceId, userId])
+  @@map("connections")
+}
+
+model CapabilityInstall {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  kind        String
+  name        String
+  source      String
+  version     String?
+  digest      String?
+  config      Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, userId])
+  @@map("capability_installs")
+}
+
+model MemoryDocument {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  botId       String?
+  bot         Bot?     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  scope       String
+  path        String
+  content     String
+  revision    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  revisions   MemoryRevision[]
+
+  @@unique([workspaceId, scope, botId, path])
+  @@index([workspaceId, userId])
+  @@map("memory_documents")
+}
+
+model MemoryRevision {
+  id         String   @id @default(cuid())
+  documentId String
+  document   MemoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revision   Int
+  content    String
+  sourceRunId String?
+  sourceThreadId String?
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, revision])
+  @@map("memory_revisions")
+}
+
+model AgentHome {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String   @unique
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  revision    String   @default("empty")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("agent_homes")
+}
+
+model BrowserProfile {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String   @unique
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  secretId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("browser_profiles")
+}
+
+model Computer {
+  id                      String   @id @default(cuid())
+  workspaceId             String
+  workspace               Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId                   String
+  scope                    String   @default("team")
+  scopeKey                 String   @unique
+  homeKey                  String   @unique
+  homeRevision             String   @default("empty")
+  kind                     String
+  providerRef              String?
+  state                    String   @default("stopped")
+  controlHolder            String   @default("none")
+  controlLeaseId           String?
+  controlLeaseExpiresAt    DateTime?
+  controlBotId             String?
+  controlFence             Int      @default(0)
+  executionRunId           String?
+  executionBotId           String?
+  executionLeaseExpiresAt  DateTime?
+  executionFence           Int      @default(0)
+  screenUrl                String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  bots                     Bot[]
+  executionLeases          ComputerExecutionLease[]
+
+  @@index([workspaceId, scope])
+  @@map("computers")
+}
+
+model ComputerExecutionLease {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  runId      String
+  fence      Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([computerId, botId])
+  @@index([runId])
+  @@index([computerId, expiresAt])
+  @@map("computer_execution_leases")
+}
+
+model Artifact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  runId       String?
+  name        String
+  mimeType    String
+  size        Int
+  hash        String
+  storageKey  String
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, botId])
+  @@map("artifacts")
+}
+
+model UsageRecord {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  workspace    Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId        String?
+  bot          Bot?     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  runId        String?
+  run          Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  provider     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  createdAt    DateTime @default(now())
+
+  @@index([workspaceId, userId, createdAt])
+  @@map("usage_records")
+}
+
+model NotificationPreference {
+  id          String  @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  finish      Boolean @default(true)
+  help        Boolean @default(true)
+  takeover    Boolean @default(true)
+
+  @@unique([workspaceId, userId])
+  @@map("notification_preferences")
+}
+
+model Secret {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  kind        String
+  ciphertext  String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, workspaceId])
+  @@map("secrets")
+}

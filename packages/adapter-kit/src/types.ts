@@ -1,0 +1,344 @@
+import type { SandboxKind } from "@rakazo/contracts";
+
+export interface AdapterContext {
+  operationId: string;
+  traceId: string;
+  workspaceId: string;
+  userId: string;
+  botId?: string;
+  runId?: string;
+  /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
+  screenLeaseId?: string;
+  signal: AbortSignal;
+  connectedProviders?: string[];
+}
+
+export interface AdapterDescriptor<TCapabilities> {
+  id: string;
+  contractVersion: string;
+  adapterVersion: string;
+  capabilities: TCapabilities;
+}
+
+/**
+ * In-process OAuth material for a single agent run. Not part of any RPC or
+ * persisted contract. Extra provider fields such as `accountId` are copied
+ * through at runtime.
+ */
+export interface AgentModelOAuthCredential {
+  type: "oauth";
+  access: string;
+  refresh: string;
+  expires: number;
+  accountId?: string;
+}
+
+export interface PortableFile {
+  path: string;
+  content: Uint8Array;
+  executable?: boolean;
+}
+
+export interface ComputerRef {
+  id: string;
+  botId: string;
+  kind: SandboxKind;
+  providerRef: string;
+  /** True when the provider created an empty replacement rather than reconnecting existing state. */
+  fresh?: boolean;
+}
+
+export interface CommandRequest {
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  pty?: boolean;
+  /** Maximum wall-clock runtime before the command and its descendants are terminated. */
+  timeoutMs?: number;
+}
+
+export type ProcessEvent =
+  | { type: "stdout"; data: string }
+  | { type: "stderr"; data: string }
+  | { type: "exit"; code: number };
+
+export interface ScreenRequest {
+  view: "stream" | "snapshot";
+  /** Request a separately authorized control stream instead of the read-only viewer. */
+  interactive?: boolean;
+  /** Fences an interactive stream so an older lease cannot revoke its replacement. */
+  controlToken?: string;
+}
+
+export interface ScreenSession {
+  url: string | null;
+  mimeType: string;
+  close(): Promise<void>;
+}
+
+export type ComputerInput =
+  | { kind: "key"; key: string; modifiers?: string[] }
+  | {
+      kind: "pointer";
+      x: number;
+      y: number;
+      button?: "left" | "right";
+      type: "move" | "down" | "up" | "click";
+    }
+  | { kind: "clipboard"; text: string };
+
+export type ComputerAction =
+  | ComputerInput
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | { kind: "wait"; ms: number }
+  | { kind: "open"; path: string }
+  | { kind: "launch"; application: string; uri?: string };
+
+export interface ComputerObservation {
+  frameId: string;
+  capturedAt: string;
+  mimeType: "image/png" | "image/jpeg";
+  image: Uint8Array;
+  width: number;
+  height: number;
+  cursor?: { x: number; y: number };
+  activeWindow?: { id: string; title?: string };
+}
+
+export interface ComputerActionRequest {
+  actions: ComputerAction[];
+  observe?: boolean;
+  settleMs?: number;
+}
+
+export interface ComputerActionResult {
+  completed: number;
+  observation?: ComputerObservation;
+}
+
+export interface ComputerFileEntry {
+  path: string;
+  kind: "file" | "dir";
+  size: number;
+  executable?: boolean;
+}
+
+export type AgentToolResultContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
+
+/** A provider-neutral tool result an agent runtime can forward without flattening images. */
+export interface AgentToolExecutionResult {
+  kind: "agent_tool_result";
+  content: AgentToolResultContent[];
+  details: unknown;
+}
+
+export interface ControlLeaseRef {
+  leaseId: string;
+  holder: "user" | "bot";
+  fence: number;
+}
+
+export interface SnapshotRef {
+  id: string;
+  createdAt: string;
+}
+
+export interface SandboxCapabilities {
+  graphical: boolean;
+  pty: boolean;
+  snapshots: boolean;
+  takeover: boolean;
+  persistentHome: boolean;
+  /** Distinct graphical screens for concurrent Team bots on one computer. */
+  multiScreen?: boolean;
+}
+
+export interface ConnectorTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ConnectorCall {
+  tool: string;
+  args: Record<string, unknown>;
+  connectionId?: string;
+  executionId: string;
+}
+
+export type ConnectorEvent =
+  | { type: "log"; message: string }
+  | { type: "result"; data: unknown }
+  | { type: "error"; message: string };
+
+export interface ConnectorCapabilities {
+  discover: boolean;
+  oauth: boolean;
+  secretsBrokered: boolean;
+}
+
+export interface MemoryReadRequest {
+  scope: "bot" | "user";
+  botId?: string;
+  path?: string;
+}
+
+export interface MemorySnapshot {
+  documents: Array<{
+    id: string;
+    path: string;
+    content: string;
+    revision: number;
+    updatedAt?: string;
+  }>;
+}
+
+export interface MemorySearchRequest {
+  query: string;
+  scope: "bot" | "user" | "all";
+  botId?: string;
+}
+
+export interface MemorySearchResult {
+  path: string;
+  snippet: string;
+  score: number;
+}
+
+export interface MemoryCommitRequest {
+  scope: "bot" | "user";
+  botId?: string;
+  path: string;
+  content: string;
+  sourceRunId?: string;
+  sourceThreadId?: string;
+}
+
+export interface MemoryRevision {
+  id: string;
+  path: string;
+  revision: number;
+  content: string;
+}
+
+export interface MemoryExportRequest {
+  scope: "bot" | "user" | "all";
+  botId?: string;
+}
+
+export interface MemoryCapabilities {
+  search: boolean;
+  revisions: boolean;
+  markdownPortable: boolean;
+}
+
+export interface AgentRunRequest {
+  botId: string;
+  threadId: string;
+  runId: string;
+  prompt: string;
+  instructions: string;
+  history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  currentTurnImages?: Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }>;
+  tools: ConnectorTool[];
+  model: {
+    provider: string;
+    id: string;
+    apiKey?: string;
+    /** In-process OAuth credential from the encrypted store for this run. */
+    oauth?: {
+      credential: AgentModelOAuthCredential;
+      persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    };
+  };
+  resumeFromCheckpoint?: string;
+  script?: ScriptedTurn[];
+  executeTool?: (
+    name: string,
+    args: Record<string, unknown>,
+    executionId: string,
+  ) => Promise<unknown>;
+}
+
+export interface ScriptedTurn {
+  assistant?: string;
+  toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
+  ask?: { text: string; detail?: string };
+  takeover?: { reason: string };
+  files?: Array<{ path: string; content: string }>;
+  memory?: Array<{ scope: "bot" | "user"; path: string; content: string }>;
+  complete?: boolean;
+}
+
+export type AgentRuntimeEvent =
+  | { type: "text"; text: string }
+  | { type: "progress"; text: string }
+  | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
+  | { type: "ask"; text: string; detail?: string }
+  | { type: "takeover"; reason: string }
+  | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }
+  | { type: "checkpoint"; blob: string }
+  | {
+      type: "subagent";
+      agentId: string;
+      name: string;
+      task: string;
+      status: "running" | "completed" | "failed";
+      progress?: string;
+      result?: string;
+    }
+  | { type: "done"; text?: string };
+
+export interface AgentRuntimeCapabilities {
+  streaming: boolean;
+  compaction: boolean;
+  tools: boolean;
+  scripted: boolean;
+}
+
+export interface BackgroundJobPayloads {
+  "run.continue": { runId: string };
+  "routine.wakeup": { routineId: string; scheduledFor: string };
+  "computer.sleep": { computerId: string };
+  "computer.control-expire": { computerId: string; leaseId: string };
+}
+
+export type BackgroundJobName = keyof BackgroundJobPayloads;
+
+export type BackgroundJob = {
+  [Name in BackgroundJobName]: {
+    name: Name;
+    payload: BackgroundJobPayloads[Name];
+    availableAt?: Date;
+    replaceKey?: string;
+  };
+}[BackgroundJobName];
+
+export type BackgroundJobHandlers = {
+  [Name in BackgroundJobName]: (payload: BackgroundJobPayloads[Name]) => Promise<void>;
+};
+
+export interface SecretRecord {
+  id: string;
+  ciphertext: string;
+}
+
+export interface ArtifactPut {
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export interface NotificationMessage {
+  kind: "completion" | "failure" | "help" | "takeover";
+  title: string;
+  body: string;
+  botId: string;
+  threadId: string;
+}

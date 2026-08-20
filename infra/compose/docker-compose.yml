@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rakazo
+      POSTGRES_PASSWORD: rakazo
+      POSTGRES_DB: rakazo
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rakazo"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  supervisor:
+    build:
+      context: ../..
+      dockerfile: infra/sandboxes/supervisor/Dockerfile
+    env_file:
+      - ../../.env
+    environment:
+      DATA_DIR: /data
+      SUPERVISOR_HOST: "0.0.0.0"
+      SUPERVISOR_PORT: "7091"
+      DOCKER_SOCKET: /var/run/docker.sock
+      RAKAZO_COMPUTER_IMAGE: sentra-agent/computer:local
+      SANDBOX_SCREEN_NETWORK: internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../data:/data
+    depends_on:
+      computer:
+        condition: service_completed_successfully
+
+  computer:
+    image: sentra-agent/computer:local
+    build:
+      context: ../sandboxes/computer
+    command: ["true"]
+    restart: "no"
+
+  data-init:
+    image: busybox:1
+    command: ["chown", "-R", "1000:1000", "/data"]
+    restart: "no"
+    volumes:
+      - ../../data:/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["bash", "-lc", "pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start"]
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      DATA_DIR: /data
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: graphile
+      SANDBOX_PROVIDER: docker
+      AGENT_RUNTIME: pi
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../../data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      DATA_DIR: /data
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: graphile
+      SANDBOX_PROVIDER: docker
+      AGENT_RUNTIME: pi
+    volumes:
+      - ../../data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    environment:
+      API_PROXY_TARGET: http://api:3100
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

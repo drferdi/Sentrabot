@@ -1,0 +1,305 @@
+import { timingSafeEqual } from "node:crypto";
+import path from "node:path";
+import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import { z } from "zod";
+import {
+  type SandboxInput,
+  screenPorts,
+  TEAM_SCREEN_LIMIT,
+  xdotoolCommand,
+} from "./computer-spec.js";
+
+export const computerActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
+  z.object({
+    kind: z.literal("pointer"),
+    x: z.number(),
+    y: z.number(),
+    button: z.enum(["left", "right"]).optional(),
+    type: z.enum(["move", "down", "up", "click"]),
+  }),
+  z.object({ kind: z.literal("clipboard"), text: z.string() }),
+  z.object({
+    kind: z.literal("scroll"),
+    direction: z.enum(["up", "down"]),
+    amount: z.number().optional(),
+  }),
+  z.object({ kind: z.literal("wait"), ms: z.number() }),
+  z.object({ kind: z.literal("open"), path: z.string() }),
+  z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
+]);
+
+export function assertRequestIdentity(
+  botId: string | undefined,
+  workspaceId: string | undefined,
+  expected: { botId: string; workspaceId: string },
+) {
+  if (botId !== expected.botId || workspaceId !== expected.workspaceId) {
+    throw new Error("computer identity mismatch");
+  }
+}
+
+export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
+  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const actual = Buffer.from(expectedToken);
+  const candidate = Buffer.from(supplied);
+  return actual.length === candidate.length && timingSafeEqual(actual, candidate);
+}
+
+export function toSandboxInput(input: {
+  kind: "key" | "pointer" | "clipboard";
+  key?: string;
+  modifiers?: string[];
+  x?: number;
+  y?: number;
+  button?: "left" | "right";
+  type?: "move" | "down" | "up" | "click";
+  text?: string;
+}): SandboxInput {
+  if (input.kind === "key") {
+    return { kind: "key", key: input.key ?? "", modifiers: input.modifiers };
+  }
+  if (input.kind === "clipboard") return { kind: "clipboard", text: input.text ?? "" };
+  return {
+    kind: "pointer",
+    x: input.x ?? 0,
+    y: input.y ?? 0,
+    button: input.button,
+    type: input.type ?? "click",
+  };
+}
+
+export function nextScreenIndex(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  leaseId?: string,
+  limit = TEAM_SCREEN_LIMIT,
+): number {
+  const existing = assigned.get(screenId);
+  if (existing) {
+    if (existing.releasing) {
+      throw new Error("This Team Computer screen is still being released.");
+    }
+    if (leaseId) {
+      if (
+        existing.leaseId &&
+        existing.leaseId !== leaseId &&
+        !canTakeScreenLease(existing.leaseId, leaseId)
+      ) {
+        throw new Error("This Team Computer screen is owned by a newer execution.");
+      }
+      if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
+    }
+    return existing.index;
+  }
+  const used = new Set([...assigned.values()].map((slot) => slot.index));
+  for (let index = 0; index < limit; index += 1) {
+    if (!used.has(index)) {
+      assigned.set(screenId, { index, leaseId });
+      return index;
+    }
+  }
+  throw new Error(`This Team Computer cannot allocate another screen (limit ${limit}).`);
+}
+
+export function releaseAssignedScreen(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  leaseId?: string,
+): number | undefined {
+  const slot = assigned.get(screenId);
+  if (!slot || slot.releasing || (leaseId && !canReleaseScreenLease(slot.leaseId, leaseId))) {
+    return undefined;
+  }
+  slot.releasing = true;
+  return slot.index;
+}
+
+export function completeReleasedScreen(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  index: number,
+): void {
+  const slot = assigned.get(screenId);
+  if (slot?.releasing && slot.index === index) assigned.delete(screenId);
+}
+
+export interface ScreenAssignment {
+  index: number;
+  leaseId?: string;
+  releasing?: boolean;
+}
+
+export function clearComputerScreenRegistry(
+  registry: Map<string, Map<string, ScreenAssignment>>,
+  containerId: string,
+) {
+  registry.delete(containerId);
+}
+
+export function stopExtraScreenCommand(index: number) {
+  if (index <= 0) return "";
+  const layout = screenPorts(index);
+  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
+  const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;
+  const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
+  return [
+    `pkill -f 'Xvfb ${layout.display} -screen' || true`,
+    `pkill -f 'HOME=${fluxHome} DISPLAY=${layout.display} fluxbox' || true`,
+    `pkill -f -- '--user-data-dir=${profile}' || true`,
+    `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
+    `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true`,
+    `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber} ${tokenFile}`,
+  ].join("; ");
+}
+
+export function ensureScreenCommand(index: number) {
+  const layout = screenPorts(index);
+  if (index === 0) {
+    return `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && exit 0; sleep 0.1; done; exit 1`;
+  }
+  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
+  const log = `/tmp/rakazo/screen-${layout.displayNumber}`;
+  const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;
+  return [
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 && exit 0 || true`,
+    `mkdir -p /tmp/rakazo ${fluxHome}/.fluxbox /tmp/.X11-unix ${profile}`,
+    `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
+    `Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >${log}-xvfb.log 2>&1 &`,
+    `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
+    `cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init`,
+    `cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
+    `cp /etc/rakazo/fluxbox/menu ${fluxHome}/.fluxbox/menu 2>/dev/null || true`,
+    `HOME=${fluxHome} DISPLAY=${layout.display} fluxbox -rc ${fluxHome}/.fluxbox/init >${log}-fluxbox.log 2>&1 &`,
+    `if [ -d /home/rakazo/.browser-profiles/chromium ]; then cp -a /home/rakazo/.browser-profiles/chromium/. ${profile}/; rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket; fi`,
+    // Concurrent screen requests can reach this point before Xvfb answers
+    // xdpyinfo above, and every one of them used to start its own browser on the
+    // same profile. Chromium then fought itself over the profile lock and every
+    // window showed "Profile error occurred", so only launch when nothing holds
+    // this profile yet.
+    `pgrep -f -- '--user-data-dir=${profile}' >/dev/null 2>&1 || DISPLAY=${layout.display} HOME=/home/rakazo rakazo-browser --user-data-dir=${profile} >${log}-browser.log 2>&1 &`,
+    `x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
+    `websockify --web=/usr/share/novnc 0.0.0.0:${layout.viewPort} 127.0.0.1:${layout.viewVncPort} >${log}-novnc.log 2>&1 &`,
+    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
+    "exit 1",
+  ].join("\n");
+}
+
+export function containerActionStep(
+  action: z.infer<typeof computerActionSchema>,
+  display = ":1",
+): { argv: string[] } | { waitMs: number } {
+  if (action.kind === "wait") {
+    return { waitMs: Math.min(Math.max(action.ms, 0), 5_000) };
+  }
+  let argv: string[];
+  if (action.kind === "key" || action.kind === "pointer" || action.kind === "clipboard") {
+    argv = ["env", `DISPLAY=${display}`, ...xdotoolCommand(toSandboxInput(action))];
+  } else if (action.kind === "scroll") {
+    argv = [
+      "env",
+      `DISPLAY=${display}`,
+      "xdotool",
+      "click",
+      "--repeat",
+      String(Math.min(Math.max(Math.round(action.amount ?? 3), 1), 20)),
+      action.direction === "up" ? "4" : "5",
+    ];
+  } else if (action.kind === "open") {
+    const target = /^https?:\/\//i.test(action.path)
+      ? action.path
+      : workspaceTarget(normalizeWorkspaceRelative(action.path));
+    argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
+  } else {
+    argv = ["env", `DISPLAY=${display}`, action.application, ...(action.uri ? [action.uri] : [])];
+  }
+  return { argv };
+}
+
+export function normalizeWorkspaceRelative(value: string) {
+  const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error("path escapes the computer workspace");
+  }
+  return segments.join("/");
+}
+
+export function workspaceTarget(relative: string) {
+  return relative ? path.posix.join("/home/rakazo", relative) : "/home/rakazo";
+}
+
+export function sandboxTimeoutCommand(argv: string[], timeoutMs: number, completionMarker: string) {
+  return [
+    "timeout",
+    "--kill-after=1s",
+    `${timeoutMs / 1_000}s`,
+    "sh",
+    "-c",
+    '"$@"; status=$?; if [ "$status" -eq 124 ]; then : > "$0"; fi; exit "$status"',
+    completionMarker,
+    ...argv,
+  ];
+}
+
+export function sandboxCommandTimedOut(exitCode: number, completedWithExit124: boolean) {
+  return exitCode === 124 && !completedWithExit124;
+}
+
+export function interactiveScreenCommand(
+  interactive: boolean,
+  controlToken?: string,
+  layout = screenPorts(0),
+) {
+  const tokenFile =
+    layout.displayNumber === 1
+      ? "/tmp/rakazo/control-token"
+      : `/tmp/rakazo/control-token-${layout.displayNumber}`;
+  const stopProcesses =
+    `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true; ` +
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true; ` +
+    `rm -f ${tokenFile}`;
+  const stop = controlToken
+    ? `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" != ${shellQuote(controlToken)} ] || { ${stopProcesses}; }`
+    : stopProcesses;
+  if (!interactive) return stop;
+  if (!controlToken) throw new Error("interactive screen requires a control token");
+  return [
+    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && pgrep -f '^x11vnc .* -rfbport ${layout.controlVncPort}' >/dev/null && pgrep -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' >/dev/null && exit 0 || true`,
+    stopProcesses,
+    `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
+    `export DISPLAY=${layout.display}`,
+    `(x11vnc -display ${layout.display} -forever -shared -nopw -listen 127.0.0.1 -rfbport ${layout.controlVncPort} -xkb -ncache 0 >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &)`,
+    `(websockify --web=/usr/share/novnc 0.0.0.0:${layout.controlPort} 127.0.0.1:${layout.controlVncPort} >/tmp/rakazo/novnc-control-${layout.displayNumber}.log 2>&1 &)`,
+    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
+    "exit 1",
+  ].join("; ");
+}
+
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+export function parseObservation(output: string) {
+  const geometry = output.match(/^GEOM\s+(\d+)\s+(\d+)$/m);
+  const cursorLine = output.match(/^CURSOR\s+(.+)$/m)?.[1] ?? "";
+  const cursorX = Number(cursorLine.match(/X=(\d+)/)?.[1]);
+  const cursorY = Number(cursorLine.match(/Y=(\d+)/)?.[1]);
+  const windowId = output.match(/^WINDOW\s*(.*)$/m)?.[1]?.trim();
+  const title = output.match(/^TITLE\s*(.*)$/m)?.[1]?.trim();
+  const image = output.match(/^IMAGE\s+([A-Za-z0-9+/=]+)$/m)?.[1];
+  if (!image) throw new Error("screen capture returned no image");
+  return {
+    image,
+    mimeType: "image/png" as const,
+    width: Number(geometry?.[1] ?? 1280),
+    height: Number(geometry?.[2] ?? 800),
+    ...(Number.isFinite(cursorX) && Number.isFinite(cursorY)
+      ? { cursor: { x: cursorX, y: cursorY } }
+      : {}),
+    ...(windowId ? { activeWindow: { id: windowId, ...(title ? { title } : {}) } } : {}),
+  };
+}
