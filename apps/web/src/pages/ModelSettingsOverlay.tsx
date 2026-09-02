@@ -86,6 +86,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     return () => cancelOAuthAttempt(false);
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const groups = useMemo(() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const entry of catalog) {
@@ -215,8 +223,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex h-[min(760px,100%)] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div
+      role="presentation"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="flex h-[min(760px,100%)] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Models</div>
@@ -486,6 +503,7 @@ function ModelPicker({
   function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       return;
     }
@@ -519,6 +537,7 @@ function ModelPicker({
       choose(index);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
