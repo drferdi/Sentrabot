@@ -33,6 +33,14 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const scoped = view === "connected" ? catalog.filter((item) => item.connected) : catalog;
@@ -98,8 +106,17 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
-      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div
+      role="presentation"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between px-8 pt-7">
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Plugins</div>

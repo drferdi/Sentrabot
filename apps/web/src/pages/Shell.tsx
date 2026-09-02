@@ -112,6 +112,7 @@ export function ShellPage() {
     position: ContextMenuPosition;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
+  const [clearTarget, setClearTarget] = useState<Bot | null>(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
@@ -1377,18 +1378,8 @@ export function ShellPage() {
               });
             }}
             onClearChat={() => {
+              setClearTarget(contextBot);
               setBotMenu(null);
-              void rpc.threads.clear({ botId: contextBot.id }).then(async () => {
-                if (pinnedAroundRef.current?.botId === contextBot.id) {
-                  pinnedAroundRef.current = null;
-                }
-                if (activeBotId.current === contextBot.id) {
-                  expandedHistoryThread.current = null;
-                  setSnapshot(null);
-                }
-                await refreshThread(contextBot.id);
-                await refreshBots();
-              });
             }}
             onArchive={() => {
               setBotMenu(null);
@@ -1426,6 +1417,26 @@ export function ShellPage() {
               if (activeBotId.current !== target.botId) return;
               await refreshThread(target.botId);
               if (activeBotId.current === target.botId) setPanel("computer");
+            }}
+          />
+        ) : null}
+
+        {clearTarget ? (
+          <ClearChatDialog
+            bot={clearTarget}
+            onCancel={() => setClearTarget(null)}
+            onConfirm={async () => {
+              await rpc.threads.clear({ botId: clearTarget.id });
+              setClearTarget(null);
+              if (pinnedAroundRef.current?.botId === clearTarget.id) {
+                pinnedAroundRef.current = null;
+              }
+              if (activeBotId.current === clearTarget.id) {
+                expandedHistoryThread.current = null;
+                setSnapshot(null);
+              }
+              await refreshThread(clearTarget.id);
+              await refreshBots();
             }}
           />
         ) : null}
@@ -2414,6 +2425,79 @@ function DeleteRoutineDialog({
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClearChatDialog({
+  bot,
+  onCancel,
+  onConfirm,
+}: {
+  bot: Bot;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [clearing, setClearing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !clearing) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clearing, onCancel]);
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!clearing) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="clear-chat-title"
+        aria-describedby="clear-chat-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="clear-chat-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          Clear {bot.name}&apos;s chat?
+        </h2>
+        <p id="clear-chat-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+          This deletes the conversation history with {bot.name}. This cannot be undone.
+        </p>
+        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={onCancel}
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={() => {
+              setClearing(true);
+              setError(null);
+              void onConfirm().catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not clear chat");
+                setClearing(false);
+              });
+            }}
+            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+          >
+            {clearing ? "Clearing…" : "Clear chat"}
           </button>
         </div>
       </div>
