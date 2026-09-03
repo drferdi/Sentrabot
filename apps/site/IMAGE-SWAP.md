@@ -236,7 +236,7 @@ untuk favicon. Bersifat aditif dan mudah dicabut. Tidak ada perubahan pada `src/
 | `173fb9e5f029.webp` (awan) | Dekoratif murni, tanpa merek |
 
 
-| `original/`, `content-clean.md`, `fullpage-preview.png` | Arsip pra-rebrand, sengaja dibiarkan |
+| `original/` | Arsip pra-rebrand, sengaja dibiarkan (duplikat root sudah dihapus) |
 | `assets/*.js` (chunk Next lama) | Tidak dimuat aplikasi Vite |
 
 ## Verifikasi

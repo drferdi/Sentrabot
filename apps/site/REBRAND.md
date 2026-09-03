@@ -115,7 +115,7 @@ Heading kept: Frequently asked questions.
 
 - Waves 1–9 complete on `src/html/**` + `index.html` meta.
 - Verified: **0** matches for `Cora`, `cora.computer`, `Gmail`, `Get Started`, `Start free trial`, `Log in` under `src/` and root `index.html`.
-- Left intentionally: `original/` archive, `content-clean.md` capture notes, unused root `assets/*.js` Next chunks (not loaded by Vite app).
+- Left intentionally: `original/` archive (pre-rebrand capture). Root capture dupes and unused Next chunks were removed in cleanup.
 - Images/logo PNG rebranded to Sentra Bot in waves 11-16 — see `IMAGE-SWAP.md`.
 
 ## Wave 10 — Bahasa Indonesia penuh (2026-08-21)
@@ -344,7 +344,7 @@ utama memakai path **relatif** (`assets/...`), di URL `/privasi/` semuanya menun
 `/privasi/assets/...` — **185 dari 261 gambar gagal dimuat**. Diganti berkas datar
 `privasi.html` dan `ketentuan.html`, yang bekerja sama baiknya di dev maupun hasil build.
 
-**Sisa yang perlu dibersihkan manual:** folder `public/privasi/` dan `public/ketentuan/` dari
+**Sudah dibersihkan:** folder `public/privasi/` dan `public/ketentuan/` dari
 percobaan pertama masih ada — mount tidak mengizinkan saya menghapus direktori. Mohon Chief
 hapus keduanya agar tidak membingungkan.
 
