@@ -28,6 +28,7 @@ broken PNGs unless Project Settings → Git → Git LFS is enabled.
 - `index.html` + `src/App.jsx` — React/Vite landing-page entry and composition
 - `src/html/` — section markup (copy updated wave-by-wave; see `REBRAND.md`)
 - `public/{tentang,daftar,privasi,ketentuan}.html` — standalone public pages
+- `public/workspace/index.html` — placeholder for `/workspace` while product login is in closed testing
 - `IMAGE-SWAP.md` — image rebrand log (waves 11–16)
 - `public/assets/` — captured CSS, rebranded images, the polish layer, and self-hosted IBM Plex Sans
 
