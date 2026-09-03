@@ -29,8 +29,13 @@ function composerInput(page: Page) {
 }
 
 export async function expectComposerReady(page: Page) {
-  await expect(composerInput(page)).toBeVisible({ timeout: 20_000 });
-  await expect(composerInput(page)).toBeEnabled();
+  await expect(page.locator('[data-testid="shell-root"][data-ready="true"]')).toBeVisible({
+    timeout: 20_000,
+  });
+  const composer = composerInput(page);
+  await expect(composer).toBeVisible({ timeout: 20_000 });
+  await expect(composer).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
 }
 
 function isSendResponse(response: { url(): string; request(): { method(): string } }) {
@@ -38,15 +43,21 @@ function isSendResponse(response: { url(): string; request(): { method(): string
 }
 
 export async function sendComposer(page: Page, text: string) {
-  const composer = composerInput(page);
-  await expect(composer).toBeVisible({ timeout: 20_000 });
-  await expect(composer).toBeEnabled();
-  await composer.click();
-  await composer.fill(text);
-  await expect(composer).toHaveValue(text);
+  await expectComposerReady(page);
   const send = page.getByTestId("composer-bar").getByRole("button", { name: "Send", exact: true });
-  await expect(send).toBeEnabled({ timeout: 10_000 });
 
+  // Controlled React draft can lag Playwright fill, or remount wipe the DOM value.
+  // Retry until the textarea value and Send enabled state agree.
+  await expect(async () => {
+    const composer = composerInput(page);
+    await expect(composer).toBeEnabled();
+    await composer.click();
+    await composer.fill(text);
+    await expect(composer).toHaveValue(text);
+    await expect(send).toBeEnabled();
+  }).toPass({ timeout: 20_000 });
+
+  const composer = composerInput(page);
   const sent = page.waitForResponse(isSendResponse, { timeout: 8_000 });
   await send.click();
   try {
