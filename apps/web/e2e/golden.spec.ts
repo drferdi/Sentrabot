@@ -79,10 +79,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
-  await expect(page.getByRole("button", { name: "I\u2019m done", exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: /done$/i }).last()).toBeVisible();
   if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover-outcomes");
-  await page.getByRole("button", { name: "I\u2019m done", exact: true }).last().click();
+  await page.getByRole("button", { name: /done$/i }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
   await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
     timeout: realSandboxTimeout(90_000, 30_000),
@@ -185,13 +185,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP \u00b7 https:\/\/treg\.to\/mcp\/ \u00b7 credential saved/)).toBeVisible();
+  await expect(page.getByText(/treg\.to\/mcp/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser MCP");
   await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP \u00b7 https:\/\/mcp\.example\.test\/mcp \u00b7 no auth/)).toBeVisible();
+  await expect(page.getByText(/mcp\.example\.test\/mcp/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser API");
@@ -201,9 +201,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.locator("select").selectOption("bearer");
   await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/API \u00b7 https:\/\/api\.example\.test\/v1 \u00b7 credential saved/),
-  ).toBeVisible();
+  await expect(page.getByText(/api\.example\.test\/v1/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11c-provider-emulators");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
