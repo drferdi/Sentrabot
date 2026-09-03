@@ -19,10 +19,8 @@ pulls Electron/Playwright and can fail with `ERR_INVALID_THIS` /
 `ERR_PNPM_META_FETCH_FAIL` on Vercel).
 
 Deploy-critical images under `public/` and `src/` are stored as normal git
-blobs (not Git LFS), because Vercel ships LFS pointer text as broken PNGs
-unless Project Settings → Git → Git LFS is enabled. Keep that toggle on as a
-belt-and-suspenders for any remaining LFS paths; `installCommand` also runs
-`git lfs pull --include=apps/site/**`.
+blobs (not Git LFS). Vercel otherwise ships LFS pointer text (~130 bytes) as
+broken PNGs unless Project Settings → Git → Git LFS is enabled.
 
 ## Layout
 
