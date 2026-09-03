@@ -12,7 +12,7 @@
   "logo": {
     "light": "/logo/light.png",
     "dark": "/logo/dark.png",
-    "href": "https://sentrahai.com"
+    "href": "https://bot.sentrahai.com"
   },
   "appearance": { "default": "dark" },
   "fonts": { "family": "Geist" },
@@ -26,18 +26,18 @@
     ]
   },
   "navbar": {
-    "links": [{ "label": "Mengenai Sentra", "href": "https://sentrahai.com/tentang.html" }],
-    "primary": { "type": "button", "label": "Coba SentraBot", "href": "https://sentrahai.com" }
+    "links": [{ "label": "Mengenai Sentra", "href": "https://bot.sentrahai.com/tentang.html" }],
+    "primary": { "type": "button", "label": "Coba SentraBot", "href": "https://bot.sentrahai.com" }
   },
   "footer": {
-    "socials": { "website": "https://sentrahai.com" },
+    "socials": { "website": "https://bot.sentrahai.com" },
     "links": [
       {
         "header": "Sentra",
         "items": [
-          { "label": "Mengenai Sentra", "href": "https://sentrahai.com/tentang.html" },
-          { "label": "Privasi", "href": "https://sentrahai.com/privasi.html" },
-          { "label": "Ketentuan", "href": "https://sentrahai.com/ketentuan.html" }
+          { "label": "Mengenai Sentra", "href": "https://bot.sentrahai.com/tentang.html" },
+          { "label": "Privasi", "href": "https://bot.sentrahai.com/privasi.html" },
+          { "label": "Ketentuan", "href": "https://bot.sentrahai.com/ketentuan.html" }
         ]
       }
     ]

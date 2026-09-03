@@ -18,6 +18,9 @@ Project Root Directory must be `apps/site`. `vercel.json` forces `npm ci` +
 pulls Electron/Playwright and can fail with `ERR_INVALID_THIS` /
 `ERR_PNPM_META_FETCH_FAIL` on Vercel).
 
+Production domain: **`https://bot.sentrahai.com`** (see `DOMAIN.md`). Do not
+point apex `sentrahai.com` at this project.
+
 Deploy-critical images under `public/` and `src/` are stored as normal git
 blobs (not Git LFS). Vercel otherwise ships LFS pointer text (~130 bytes) as
 broken PNGs unless Project Settings → Git → Git LFS is enabled.

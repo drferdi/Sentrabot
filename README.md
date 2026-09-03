@@ -6,15 +6,15 @@
 </td>
 <td width="66%" valign="top">
 
-### [`SENTRA / BOT`](https://sentrahai.com/)
+### [`SENTRA / BOT`](https://bot.sentrahai.com/)
 
-<a href="https://sentrahai.com/">
+<a href="https://bot.sentrahai.com/">
   <img src="https://readme-typing-svg.demolab.com?font=Caveat&weight=700&size=33&duration=3400&pause=1500&color=EB5939&vCenter=true&width=710&height=44&lines=Intelligence+for+Autonomy.;Persistent+AI+teammates+you+actually+own." alt="Sentra Bot — Intelligence for Autonomy." />
 </a>
 
 <b>Operational signal:</b> persistent agents · memory · routines · computers · human authority
 
-<a href="https://sentrahai.com/"><b>Sentra Bot</b></a><br />
+<a href="https://bot.sentrahai.com/"><b>Sentra Bot</b></a><br />
 The autonomous intelligence layer of Sentra Artificial Intelligence.
 
 <p>
@@ -38,7 +38,7 @@ The autonomous intelligence layer of Sentra Artificial Intelligence.
 
 ### `01 / ORIGIN SIGNAL`
 
-**[Sentra Bot](https://sentrahai.com/)** is the operating layer for persistent, composable AI teammates you actually own — agents that can hold memory, execute routines, use computers, and work against your own models, your own data, and your own machines.
+**[Sentra Bot](https://bot.sentrahai.com/)** is the operating layer for persistent, composable AI teammates you actually own — agents that can hold memory, execute routines, use computers, and work against your own models, your own data, and your own machines.
 
 The repository is not a single chatbot and not a thin model wrapper. It contains the full runtime surface: API, web and desktop clients, background worker, job orchestration, memory, computer providers, connectors, artifacts, realtime infrastructure, and a deliberately read-only clinical reconnaissance bridge.
 
