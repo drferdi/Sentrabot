@@ -12,9 +12,7 @@ import {
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
   const resolved =
-    name instanceof RegExp && !name.source.startsWith("^")
-      ? new RegExp(`^${name.source}`)
-      : name;
+    name instanceof RegExp && !name.source.startsWith("^") ? new RegExp(`^${name.source}`) : name;
   return page.locator("[data-sidebar-group]").getByRole("button", { name: resolved });
 }
 
@@ -222,7 +220,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
   const settings = page.getByTestId("bot-settings");
   await expect(settings.getByRole("button", { name: "Archive bot" })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Delete bot" }).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Delete bot" })).toHaveCount(0);
   await page.getByRole("button", { name: "Close panel" }).click();
 
   await page.locator("aside").first().getByRole("button", { name: /Chief/ }).first().click({
