@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  expectVisibleAfterRealtime,
+  sendComposer,
+  signup,
+} from "./helpers";
 
 test("message hover shows Reply and Copy; reply links to parent", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -9,14 +15,11 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
 
   const parentText = `hover-parent-${stamp}`;
   const replyText = `hover-reply-${stamp}`;
-  const composer = page.getByRole("textbox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
-  await composer.fill(parentText);
-  await composer.press("Enter");
+  await sendComposer(page, parentText);
 
   const transcript = page.getByTestId("transcript");
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
-  await expect(parentRow).toBeVisible({ timeout: 20_000 });
+  await expectVisibleAfterRealtime(page, parentRow, 20_000);
 
   await parentRow.hover();
   const toolbar = parentRow.getByTestId("message-hover-actions");
@@ -24,7 +27,6 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await expect(toolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Copy" })).toBeVisible();
 
-  // Pill must float above the bubble text, not cover the first line.
   const bubble = parentRow.locator("div").filter({ hasText: parentText }).last();
   await expect
     .poll(async () => {
@@ -35,7 +37,6 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
     })
     .toBe(true);
 
-  // Keep the pill visible for the artifact (full-page shots can drop :hover).
   await toolbar.evaluate((el) => {
     const node = el as HTMLElement;
     node.style.opacity = "1";
@@ -74,12 +75,11 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await expect(replyChip).toBeVisible();
   await expect(replyChip).toContainText(/Replying to/);
 
-  await composer.fill(replyText);
-  await composer.press("Enter");
+  await sendComposer(page, replyText);
   await expect(replyChip).toHaveCount(0);
 
   const replyRow = transcript.locator(`[data-message-id]`).filter({ hasText: replyText }).first();
-  await expect(replyRow).toBeVisible({ timeout: 20_000 });
+  await expectVisibleAfterRealtime(page, replyRow, 20_000);
   const parentPreview = replyRow.getByTestId("reply-parent-preview");
   await expect(parentPreview).toBeVisible();
   await expect(parentPreview).toContainText(parentText);
@@ -96,28 +96,22 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
 
   const parentText = `page-parent-${stamp}`;
   const replyText = `page-reply-${stamp}`;
-  const composer = page.getByRole("textbox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
-  await composer.fill(parentText);
-  await composer.press("Enter");
+  await sendComposer(page, parentText);
 
   const transcript = page.getByTestId("transcript");
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
-  await expect(parentRow).toBeVisible({ timeout: 20_000 });
+  await expectVisibleAfterRealtime(page, parentRow, 20_000);
   const parentId = await parentRow.getAttribute("data-message-id");
   expect(parentId).toBeTruthy();
 
   await parentRow.hover();
   await parentRow.getByRole("button", { name: "Reply" }).click();
-  await composer.fill(replyText);
-  await composer.press("Enter");
+  await sendComposer(page, replyText);
 
   const replyRow = transcript.locator(`[data-message-id]`).filter({ hasText: replyText }).first();
-  await expect(replyRow).toBeVisible({ timeout: 20_000 });
+  await expectVisibleAfterRealtime(page, replyRow, 20_000);
   await expect(replyRow.getByTestId("reply-parent-preview")).toContainText(parentText);
 
-  // Simulate a paginated snapshot where the parent is older than the loaded page.
-  // Bootstrap and threads/get both hydrate the transcript on reload.
   const stripParent = (body: {
     json?: {
       messages?: Array<{ id: string }>;

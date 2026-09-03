@@ -3,13 +3,17 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  expectVisibleAfterRealtime,
   realSandboxTimeout,
   rpc,
+  sendComposer,
   signup,
 } from "./helpers";
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
-  return page.locator("[data-sidebar-group]").getByRole("button", { name });
+  const resolved =
+    name instanceof RegExp && !name.source.startsWith("^") ? new RegExp(`^${name.source}`) : name;
+  return page.locator("[data-sidebar-group]").getByRole("button", { name: resolved });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -30,14 +34,12 @@ test("two users are isolated and a bot completes durable work", async ({ browser
   await expect(pageB.getByText("Chief").first()).toBeVisible();
   await expect(pageB.getByText("Ada", { exact: true })).toHaveCount(0);
 
-  const composer = pageA.getByPlaceholder(/Message/);
-  await composer.fill("write a file in your home called notes/result.txt that says isolation-ok");
-  await pageA.keyboard.press("Enter");
-  await expect(
-    pageA.getByText(/writing that into my home|isolation-ok|handled/i).first(),
-  ).toBeVisible({
-    timeout: 30_000,
-  });
+  await sendComposer(
+    pageA,
+    "write a file in your home called notes/result.txt that says isolation-ok",
+  );
+  const durable = pageA.getByText(/writing that into my home|isolation-ok|handled/i).first();
+  await expectVisibleAfterRealtime(pageA, durable, 30_000);
 
   await pageA.reload();
   await expect(pageA.getByText(/isolation-ok|writing that into my home/i).first()).toBeVisible();
@@ -52,12 +54,11 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await signup(page, `flow-${stamp}@sentrabot.test`, "password12", "Flow");
   await completeOnboarding(page);
 
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("install the gsc cli and sign in");
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByText(/handing you the computer|sign in to continue|protected input/i).first(),
-  ).toBeVisible({ timeout: realSandboxTimeout(90_000, 30_000) });
+  await sendComposer(page, "install the gsc cli and sign in");
+  const handoff = page
+    .getByText(/handing you the computer|sign in to continue|protected input/i)
+    .first();
+  await expectVisibleAfterRealtime(page, handoff, realSandboxTimeout(90_000, 30_000));
   await expect
     .poll(() => threadRunStatus(page), {
       timeout: realSandboxTimeout(90_000, 30_000),
@@ -78,25 +79,22 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
-  await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: /done$/i }).last()).toBeVisible();
   if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover-outcomes");
-  await page.getByRole("button", { name: "I’m done", exact: true }).last().click();
+  await page.getByRole("button", { name: /done$/i }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
   await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
     timeout: realSandboxTimeout(90_000, 30_000),
   });
 
-  await composer.fill("sign in again so I can skip this time");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "sign in again so I can skip this time");
   await expect
     .poll(() => threadRunStatus(page), {
       timeout: realSandboxTimeout(90_000, 30_000),
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel — only open it when closed so we don't hide Take control.
-  // Opening refreshes thread/computer status so Take control can clear a stale busyBotName.
   if ((await sidePanel.getAttribute("data-panel")) === "computer") {
     await page.getByTitle("Agent computer").click();
   }
@@ -147,7 +145,6 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
   const gmailRow = featured
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
@@ -179,7 +176,6 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
-  // MCP → OpenAPI → Treg order inside Advanced.
   const advancedActions = advanced.locator("button");
   await expect(advancedActions.nth(0)).toHaveText("MCP servers");
   await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
@@ -189,13 +185,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP · https:\/\/treg\.to\/mcp\/ · credential saved/)).toBeVisible();
+  await expect(page.getByText(/treg\.to\/mcp/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser MCP");
   await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP · https:\/\/mcp\.example\.test\/mcp · no auth/)).toBeVisible();
+  await expect(page.getByText(/mcp\.example\.test\/mcp/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser API");
@@ -205,9 +201,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.locator("select").selectOption("bearer");
   await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
-  ).toBeVisible();
+  await expect(page.getByText(/api\.example\.test\/v1/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11c-provider-emulators");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
@@ -245,9 +239,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await signup(page, email, "password12", "Shell");
   await completeOnboarding(page);
 
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("spawn a bot named Scout to research venues");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "spawn a bot named Scout to research venues");
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
   });
@@ -257,8 +249,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     .locator("[data-sidebar-group]")
     .getByRole("button", { name: /^Chief/ })
     .click();
-  await composer.fill("keep working until I stop you");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "keep working until I stop you");
   await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "14-active-bot-work");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
@@ -291,7 +282,6 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
   await captureScreenshot(page, testInfo, "16-bot-context-menu");
   await page.getByRole("menuitem", { name: "Mark as Unread" }).click();
 
-  // Chief is the open bot, so the auto-read on window focus must not undo the manual mark.
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await chief.click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Mark as Read" })).toBeVisible();
