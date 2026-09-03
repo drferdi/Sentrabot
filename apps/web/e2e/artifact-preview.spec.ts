@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  expectVisibleAfterRealtime,
+  sendComposer,
+  signup,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -8,14 +14,10 @@ test("agent-attached files appear as downloadable cards", async ({ page }, testI
   await signup(page, `artifact-card-${stamp}@sentrabot.test`, "password12", "Artifact Card");
   await completeOnboarding(page);
 
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("write notes/result.txt and attach it to the thread");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "write notes/result.txt and attach it to the thread");
 
-  // Scope to ArtifactFileCard text (name + mime); sidebar bot status can also
-  // include the prompt path notes/result.txt once status syncs immediately.
   const fileCard = page.getByRole("button", { name: /result\.txt text\/plain/ });
-  await expect(fileCard).toBeVisible({ timeout: 30_000 });
+  await expectVisibleAfterRealtime(page, fileCard, 30_000);
   await captureScreenshot(page, testInfo, "current-file-card");
 
   const downloadPromise = page.waitForEvent("download");
@@ -31,14 +33,13 @@ test("agent-attached Markdown opens a rendered preview and can be downloaded", a
   await signup(page, `markdown-preview-${stamp}@sentrabot.test`, "password12", "Markdown Preview");
   await completeOnboarding(page);
 
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill(
+  await sendComposer(
+    page,
     "write path notes/preview.md and attach it to the thread says # Project preview",
   );
-  await page.keyboard.press("Enter");
 
   const previewButton = page.getByRole("button", { name: "Preview preview.md" });
-  await expect(previewButton).toBeVisible({ timeout: 30_000 });
+  await expectVisibleAfterRealtime(page, previewButton, 30_000);
   await captureScreenshot(page, testInfo, "markdown-file-card");
   await previewButton.click();
 
