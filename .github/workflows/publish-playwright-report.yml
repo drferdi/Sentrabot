@@ -33,6 +33,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+          lfs: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -148,7 +149,7 @@ jobs:
           public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
           gallery_url="$public_base_url/prs/$PR_NUMBER/index.html"
           marker="<!-- sentrabot-playwright-screenshots -->"
-          body="$(printf '%s\n### Playwright screenshots\n[Open screenshot gallery](%s) · [Dashboard](%s/index.html) · [CI run](%s)\n\nUpdated for commit `%s`.' \
+          body="$(printf '%s\n### Playwright screenshots\n[Open screenshot gallery](%s) · [Dashboard](%s/index.html) · [CI run](%s)\n\nUpdated for commit `%s`." \
             "$marker" "$gallery_url" "$public_base_url" "$RUN_URL" "${SHA:0:7}")"
           comment_id="$(gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" | \
