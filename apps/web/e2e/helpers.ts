@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
   return provider === "e2b" || provider === "daytona" || provider === "box";
@@ -24,6 +24,50 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
   return parsed.json as T;
 }
 
+export async function expectComposerReady(page: Page) {
+  await expect(page.getByRole("textbox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
+}
+
+export async function sendComposer(page: Page, text: string) {
+  const composer = page.getByRole("textbox", { name: /^Message/ });
+  await expect(composer).toBeVisible({ timeout: 20_000 });
+  await composer.fill(text);
+  const sent = page.waitForResponse(
+    (response) =>
+      response.url().includes("/rpc/threads/send") && response.request().method() === "POST",
+  );
+  await composer.press("Enter");
+  const response = await sent;
+  if (!response.ok()) throw new Error(`threads/send ${response.status()}`);
+  return response;
+}
+
+/** Realtime can lag threads/get. If the node is missing after a short wait, reload once. */
+export async function expectVisibleAfterRealtime(page: Page, locator: Locator, timeout = 30_000) {
+  try {
+    await expect(locator).toBeVisible({ timeout: Math.min(8_000, timeout) });
+    return;
+  } catch {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectComposerReady(page);
+    await expect(locator).toBeVisible({ timeout });
+  }
+}
+
+export async function waitForRunStatus(page: Page, status: string, timeout = 30_000) {
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status?: string } | null }>(page, "threads/get", {
+          botId: activeBotId(page),
+        });
+        return snapshot.run?.status ?? "idle";
+      },
+      { timeout, message: `run status should become ${status}` },
+    )
+    .toBe(status);
+}
+
 export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
   const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });
@@ -31,7 +75,10 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   // .first(): template copy like "Chief of Staff" can match alongside the
   // heading, and a multi-element union trips Playwright strict mode.
   await heading.or(chief).first().waitFor({ timeout: 20_000 });
-  if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) return;
+  if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) {
+    await expectComposerReady(page);
+    return;
+  }
   if (
     await page
       .getByRole("heading", { name: "Connect a model" })
@@ -63,6 +110,7 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   }
   await page.waitForURL(/\/app/);
   await expect(page.getByText("Chief").first()).toBeVisible();
+  await expectComposerReady(page);
   if (testInfo) await captureScreenshot(page, testInfo, "06-onboarding-complete");
 }
 
