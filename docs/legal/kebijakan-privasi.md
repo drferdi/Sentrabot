@@ -36,7 +36,8 @@ infrastruktur produk berjalan pada basis data, kredensial, dan kendali akses yan
 Menjadi pengguna SentraBot tidak menjadikan seseorang bagian dari sistem informasi rumah
 sakit, dan data pasien maupun rekam medis tidak bersinggungan dengan SentraBot.
 
-**[ISI: alamat terdaftar dan alamat surel kontak privasi.]**
+**[Alamat terdaftar belum dipublikasikan di repositori ini. Jangan memakai alamat fiktif.]**
+Kontak privasi: lihat `SUPPORT.md`. Draf ini belum ditinjau penasihat hukum.
 
 *(Identitas dikonfirmasi Chief, 1 September 2026.)*
 

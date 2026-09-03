@@ -1,8 +1,9 @@
 # Sentra Bot runtime architecture
 
 This document describes what the repository does today, verified against the code on
-2026-09-02. It is the single source of truth for the runtime topology; other documents link here
-instead of restating it. The assessment behind it lives in
+2026-09-03. It is the single source of truth for the runtime topology; other documents link here
+instead of restating it. Product *requirements* (what the system must do) live in
+`docs/requirements/`. The assessment behind the 2026-09-02 topology decisions lives in
 `docs/superpowers/plans/2026-09-02-convergence-directive.md`.
 
 ## Topology
@@ -14,9 +15,9 @@ Web (Vite 127.0.0.1:5173, proxies /api and /rpc)   Mobile (Expo)   Desktop (Elec
         ▼
 apps/api  — Hono on API_HOST:API_PORT (default 127.0.0.1:3100)   ← the harness / public runtime boundary
    ├─ auth/session (Better Auth), workspace actor (requireMembership)
-   ├─ router.ts (oRPC): bots, threads, runs, routines, computers, integrations, deployment
+   ├─ router.ts + apps/api/src/routes/* (oRPC): bots, threads, runs, routines, computers, integrations, deployment
    ├─ platform, billing, managed-AI, and webhook Hono routes
-   ├─ composition root: executor + sandbox + connectors + memory + thread events
+   ├─ composition root: composeAgentRuntime (executor + sandbox + connectors + memory + thread events)
    │    (job handlers are built here but only started when WAKEUP_DRIVER=memory)
    └─ PostgresRealtimeFanout (LISTEN sentrabot_events; wakes readers, carries no data)
         ▼
@@ -30,6 +31,9 @@ SandboxProvider ── docker ──▶ infra/sandboxes/supervisor (127.0.0.1:70
                 ── e2b | daytona | box (remote)  ── fake | none (verification / no computers)
                 ── desktop ("This Mac"): trusted host execution on the API/worker host
 DATA_DIR: agent homes, artifacts, push tokens
+
+Adjacent (not on the runtime path): apps/site (marketing), apps/docs (Mintlify),
+packages/bot-templates (66 role packages), infra/updater (Compose sidecar).
 ```
 
 ## Process ownership
@@ -193,6 +197,17 @@ boundary is needed.
   without an approved migration).
 - Trade-off: rows accumulate locally with `sentAt` null; harmless in the self-hosted database,
   revisited when the hybrid work resumes.
+- Migration consequence: none.
+
+### 2026-09-03 — requirements package is the product baseline
+
+- Problem: operator docs, plans, README, and Mintlify pages disagreed on namespace, surfaces,
+  clinical claims, and commercial numbers.
+- Decision: `docs/requirements/` (ISO/IEC/IEEE 29148 set) plus this architecture file are the
+  engineering baseline. README and contributor files must not claim `@rakazo/*`, `RAKAZO_WEB_URL`,
+  or a shipped RME adapter. Locked plan limits remain `docs/product/paket-free-batas-v1.md`.
+- Evidence: `pnpm-workspace.yaml` and every `package.json` use `@sentrabot/*`; grep found no
+  RME adapter; 66 templates in `packages/bot-templates/CATALOG.md`.
 - Migration consequence: none.
 
 ### 2026-09-03 — sentrabot is a standalone workspace, not a Monorepo member
