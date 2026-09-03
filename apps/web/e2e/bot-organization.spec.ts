@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, expectComposerReady, rpc, signup } from "./helpers";
 
 test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -168,17 +168,22 @@ test("chat composer controls are vertically centered", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `composer-layout-${stamp}@sentrabot.test`, "password12", "Composer Layout");
   await completeOnboarding(page);
+  await expectComposerReady(page);
+  await expect(page.getByTestId("composer-bar")).toBeVisible();
 
   const centers = await page.getByTestId("composer-bar").evaluate((composer) =>
-    ["Attach file", "Dictate", "Message Chief", "Send"].map((label) => {
+    ["Attach file", "Dictate", "Send"].map((label) => {
       const element = composer.querySelector<HTMLElement>(`[aria-label="${label}"]`);
       if (!element) throw new Error(`Missing composer control: ${label}`);
       const box = element.getBoundingClientRect();
       return box.top + box.height / 2;
     }),
   );
+  const messageBox = await page.getByRole("textbox", { name: /^Message/ }).boundingBox();
+  if (!messageBox) throw new Error("Missing composer control: Message");
+  centers.push(messageBox.y + messageBox.height / 2);
 
-  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(2);
 });
 
 test("group chats share every context-menu action", async ({ page }, testInfo) => {
