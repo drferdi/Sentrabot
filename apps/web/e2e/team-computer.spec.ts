@@ -6,6 +6,7 @@ import {
   openNewBot,
   realSandboxTimeout,
   rpc,
+  sendComposer,
   signup,
 } from "./helpers";
 
@@ -50,7 +51,7 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
 
   const privateId = await createBot(page, "Private Writer", "dedicated");
   await openComputerPanel(page);
-  await expect(page.getByText("Private Writer’s computer", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Private Writer\u2019s computer", { exact: true }).last()).toBeVisible();
   await captureScreenshot(page, testInfo, "43-private-computer");
   await expect(readFileResponse(page, privateId, "notes/result.txt")).resolves.toMatchObject({
     ok: false,
@@ -255,15 +256,7 @@ async function sendAndWait(page: Page, botId: string, text: string) {
 }
 
 async function sendMessage(page: Page, text: string) {
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill(text);
-  const sent = page.waitForResponse(
-    (response) =>
-      response.url().includes("/rpc/threads/send") && response.request().method() === "POST",
-  );
-  await page.keyboard.press("Enter");
-  const response = await sent;
-  expect(response.ok()).toBe(true);
+  const response = await sendComposer(page, text);
   const result = (await response.json()) as { json?: { runId?: string } };
   if (!result.json?.runId) throw new Error("threads/send did not return a run id");
   return result.json.runId;
