@@ -1,8 +1,7 @@
 * text=auto eol=lf
-
 *.sh text eol=lf
 infra/sandboxes/computer/sentrabot-browser text eol=lf
 infra/sandboxes/computer/fluxbox.* text eol=lf
-*.png binary
-*.jpg binary
-*.ico binary
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
