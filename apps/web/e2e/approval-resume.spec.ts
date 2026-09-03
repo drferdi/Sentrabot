@@ -18,8 +18,8 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await sendComposer(page, "ask me which city to use");
   await waitForRunStatus(page, "waiting_input");
 
-  const prompt = page.getByText("Which city should I use?", { exact: true });
-  await expectVisibleAfterRealtime(page, prompt);
+  const prompt = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
+  await expectVisibleAfterRealtime(page, prompt.first());
   await expect(page.getByText("Reply with one city name.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send it" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit first" })).toBeVisible();
