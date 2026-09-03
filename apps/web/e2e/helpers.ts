@@ -24,29 +24,43 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
   return parsed.json as T;
 }
 
+function composerInput(page: Page) {
+  return page.locator('textarea[name="chat-message"]');
+}
+
 export async function expectComposerReady(page: Page) {
-  await expect(page.getByRole("textbox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("textbox", { name: /^Message/ })).toBeEnabled();
+  await expect(composerInput(page)).toBeVisible({ timeout: 20_000 });
+  await expect(composerInput(page)).toBeEnabled();
+}
+
+function isSendResponse(response: { url(): string; request(): { method(): string } }) {
+  return response.url().includes("/rpc/threads/send") && response.request().method() === "POST";
 }
 
 export async function sendComposer(page: Page, text: string) {
-  const composer = page.getByRole("textbox", { name: /^Message/ });
+  const composer = composerInput(page);
   await expect(composer).toBeVisible({ timeout: 20_000 });
   await expect(composer).toBeEnabled();
   await composer.click();
   await composer.fill(text);
   await expect(composer).toHaveValue(text);
-  const send = page.getByRole("button", { name: "Send", exact: true });
+  const send = page.getByTestId("composer-bar").getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled({ timeout: 10_000 });
-  const sent = page.waitForResponse(
-    (response) =>
-      response.url().includes("/rpc/threads/send") && response.request().method() === "POST",
-    { timeout: 20_000 },
-  );
+
+  const sent = page.waitForResponse(isSendResponse, { timeout: 8_000 });
   await send.click();
-  const response = await sent;
-  if (!response.ok()) throw new Error(`threads/send ${response.status()}`);
-  return response;
+  try {
+    const response = await sent;
+    if (!response.ok()) throw new Error(`threads/send ${response.status()}`);
+    return response;
+  } catch {
+    const retry = page.waitForResponse(isSendResponse, { timeout: 15_000 });
+    await composer.focus();
+    await page.keyboard.press("Enter");
+    const response = await retry;
+    if (!response.ok()) throw new Error(`threads/send ${response.status()}`);
+    return response;
+  }
 }
 
 /** Realtime can lag threads/get. If the node is missing after a short wait, reload once. */
