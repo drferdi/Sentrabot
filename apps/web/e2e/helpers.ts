@@ -26,17 +26,24 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
 
 export async function expectComposerReady(page: Page) {
   await expect(page.getByRole("textbox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("textbox", { name: /^Message/ })).toBeEnabled();
 }
 
 export async function sendComposer(page: Page, text: string) {
   const composer = page.getByRole("textbox", { name: /^Message/ });
   await expect(composer).toBeVisible({ timeout: 20_000 });
+  await expect(composer).toBeEnabled();
+  await composer.click();
   await composer.fill(text);
+  await expect(composer).toHaveValue(text);
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await expect(send).toBeEnabled({ timeout: 10_000 });
   const sent = page.waitForResponse(
     (response) =>
       response.url().includes("/rpc/threads/send") && response.request().method() === "POST",
+    { timeout: 20_000 },
   );
-  await composer.press("Enter");
+  await send.click();
   const response = await sent;
   if (!response.ok()) throw new Error(`threads/send ${response.status()}`);
   return response;
@@ -72,8 +79,6 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
   const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });
   const chief = page.getByText("Chief").first();
-  // .first(): template copy like "Chief of Staff" can match alongside the
-  // heading, and a multi-element union trips Playwright strict mode.
   await heading.or(chief).first().waitFor({ timeout: 20_000 });
   if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) {
     await expectComposerReady(page);
