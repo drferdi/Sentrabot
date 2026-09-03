@@ -33,25 +33,11 @@ Langkah 1–3 memerlukan kredensial dan pembuatan akun, jadi tidak dapat dilakuk
 | `menjalankan/*.mdx` | Computer runtime dan performa |
 | `kebijakan/*.mdx` | Ringkasan Privasi & Ketentuan, menautkan ke versi resmi di situs utama |
 
-## Yang sengaja TIDAK diterbitkan
+## Root `docs/` di git
 
-Isi `docs/` berikut **tidak** dimasukkan karena bersifat internal. Jangan menambahkannya ke
-`docs.json` tanpa pemeriksaan ulang:
+Yang di-track di repositori publik: `docs/brand/`, `docs/legal/`, `docs/plans/`.
+Sisanya (self-host, architecture, superpowers, product notes, screenshots, dll.)
+di-gitignore — tetap boleh ada lokal, tidak ikut push.
 
-| Berkas | Alasan |
-|---|---|
-| `docs/superpowers/plans/*` | Rencana implementasi |
-| `docs/superpowers/specs/*` | Spesifikasi arsitektur |
-| `docs/plans/*` | Spesifikasi MVP internal |
-| `docs/2026-agent-best-practices-brief.md` | Brief internal |
-| `docs/mobile-release.md` | Proses rilis internal |
-
-`docs/product/paket-free-batas-v1.md` **tidak** disalin utuh — halaman `mulai/paket.mdx` hanya
-mengambil bagian yang layak publik. Target COGS internal (Rp4.000/user/bulan), catatan pajak,
-dan riwayat keputusan sengaja ditinggalkan.
-
-## Menjaga tetap sinkron
-
-`mulai/paket.mdx` dan `kebijakan/*.mdx` adalah turunan. Bila angka paket atau kebijakan berubah,
-perbarui sumbernya lebih dulu — `docs/product/paket-free-batas-v1.md` dan
-`apps/site/public/*.html` — lalu sesuaikan halaman di sini.
+`mulai/paket.mdx` dan `kebijakan/*.mdx` adalah turunan publik. Bila angka paket atau
+kebijakan berubah, sesuaikan halaman di sini dan `apps/site/public/*.html`.

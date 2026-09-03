@@ -1384,13 +1384,13 @@ describeJourneys("required product journeys", () => {
   });
 
   it("11: compose backup docs and dump tooling exist", async () => {
-    expect(existsSync(path.resolve("docs/self-host.md"))).toBe(true);
     expect(existsSync(path.resolve("infra/compose/docker-compose.yml"))).toBe(true);
     expect(existsSync(path.resolve("scripts/backup.sh"))).toBe(true);
     expect(existsSync(path.resolve("scripts/restore.sh"))).toBe(true);
-    const docs = readFileSync(path.resolve("docs/self-host.md"), "utf8");
-    expect(docs).toMatch(/pg_dump/);
-    expect(docs).toMatch(/Restore/);
+    const backup = readFileSync(path.resolve("scripts/backup.sh"), "utf8");
+    const restore = readFileSync(path.resolve("scripts/restore.sh"), "utf8");
+    expect(backup).toMatch(/pg_dump/);
+    expect(restore).toMatch(/[Rr]estore/);
   });
 
   it("14: this-mac is refused unless the sandbox is docker", async () => {

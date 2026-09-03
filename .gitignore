@@ -39,11 +39,28 @@ PRODUCT_PLAN.md
 
 # Local agent state and visual-review captures; neither is product source.
 .agent/
+.agents/
 .mimosa/
+.cursor/
 _preview/
 _preview*.png
 _avatar_preview.png
 _phone_preview.png
+
+# AI / agent instruction files — keep local; not product source.
+AGENTS.md
+CLAUDE.md
+SETUP_PROMPT.md
+skills-lock.json
+
+# Root docs: track brand kit, legal, and plans only.
+docs/*
+!docs/brand/
+!docs/brand/**
+!docs/legal/
+!docs/legal/**
+!docs/plans/
+!docs/plans/**
 
 # Lingui compiled catalogs — Vite plugin compiles .po at build time
 apps/web/src/locales/**/*.mjs

@@ -92,8 +92,8 @@ describe("the updater compose service", () => {
   });
 
   it("injects the actual Compose project name into the updater container", () => {
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(updater.environment?.COMPOSE_PROJECT_NAME).toBe(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal Compose expression
       "${COMPOSE_PROJECT_NAME:-sentrabot-prod}",
     );
   });
