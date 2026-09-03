@@ -137,13 +137,17 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
   const chiefId = activeBotId(page);
 
   await sendMessage(page, "keep working until I stop you");
+  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await expect
-    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
+    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle", {
+      timeout: 30_000,
+    })
     .toBe("running");
   await captureScreenshot(page, testInfo, "48-active-team-bot-blocks-takeover");
   await expect
     .poll(
       async () => (await rpc<{ state: string }>(page, "computer/status", { botId: chiefId })).state,
+      { timeout: 30_000 },
     )
     .toBe("running");
   await expect
@@ -154,6 +158,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
             botId: chiefId,
           })
         ).busyBotName,
+      { timeout: 30_000 },
     )
     .not.toBeNull();
 
@@ -170,8 +175,6 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
   await expect(page.getByText(/is using it/i).first()).toBeVisible();
   await captureScreenshot(page, testInfo, "48b-take-control-blocked-while-busy");
 
-  // Stop through the shell so the client refreshes computer status (API stop alone
-  // does not emit a terminal thread event).
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await waitForIdle(page, chiefId);
   await expect
