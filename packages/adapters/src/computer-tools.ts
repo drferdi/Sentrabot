@@ -2,7 +2,7 @@ import type {
   AgentToolExecutionResult,
   ComputerAction,
   ComputerObservation,
-} from "@rakazo/adapter-kit";
+} from "@sentrabot/adapter-kit";
 
 export function parseComputerActions(value: unknown): ComputerAction[] {
   if (!Array.isArray(value) || value.length === 0) {

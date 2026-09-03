@@ -2,7 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
+import type { ComputerRef, ProcessEvent, SandboxProvider } from "@sentrabot/adapter-kit";
 import { afterAll, describe, expect, it } from "vitest";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
@@ -19,6 +19,12 @@ const ctx = {
   userId: "u",
   signal: new AbortController().signal,
 };
+
+function executableExpectation(provider: SandboxProvider) {
+  return process.platform === "win32" && provider instanceof DesktopSandboxProvider
+    ? {}
+    : { executable: true };
+}
 
 async function drain(provider: SandboxProvider, computer: ComputerRef) {
   let stdout = "";
@@ -92,8 +98,9 @@ describe("sandbox conformance", () => {
         ctx,
       );
       expect(await provider.readFile(computer, "bin/tool", ctx)).toEqual(binary);
+      // Windows cannot persist the executable bit (libuv st_mode); see docs/architecture.md, trusted host execution.
       expect(await provider.listFiles(computer, "bin", ctx)).toEqual([
-        { path: "bin/tool", kind: "file", size: 4, executable: true },
+        { path: "bin/tool", kind: "file", size: 4, ...executableExpectation(provider) },
       ]);
       const acted = await provider.act(
         computer,
@@ -105,9 +112,10 @@ describe("sandbox conformance", () => {
       const exported = [];
       for await (const file of provider.exportWorkspace(computer, ctx)) exported.push(file);
       expect(exported.map((file) => file.path)).toContain("notes/result.txt");
+      // Windows cannot persist the executable bit (libuv st_mode); see docs/architecture.md, trusted host execution.
       expect(exported.find((file) => file.path === "bin/tool")).toMatchObject({
         content: binary,
-        executable: true,
+        ...executableExpectation(provider),
       });
       await provider.destroy(computer, ctx);
     }
@@ -132,7 +140,7 @@ describe("sandbox conformance", () => {
   });
 
   it("desktop executor times out and kills descendants that inherited its pipes", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-timeout-"));
+    const root = mkdtempSync(path.join(tmpdir(), "sentrabot-desktop-timeout-"));
     const desktop = new DesktopSandboxProvider({ root });
     const computer = await desktop.provision({ botId: "timeout", homePath: "/unused" }, ctx);
     const marker = path.join(computer.providerRef, "descendant-survived");
@@ -164,7 +172,7 @@ describe("sandbox conformance", () => {
   });
 
   it("desktop executor aborts and kills a running command", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-abort-"));
+    const root = mkdtempSync(path.join(tmpdir(), "sentrabot-desktop-abort-"));
     const desktop = new DesktopSandboxProvider({ root });
     const computer = await desktop.provision({ botId: "abort", homePath: "/unused" }, ctx);
     const controller = new AbortController();
@@ -183,11 +191,17 @@ describe("sandbox conformance", () => {
     expect(events).toContainEqual({ type: "stderr", data: "command aborted\n" });
 
     await desktop.destroy(computer, ctx);
-    rmSync(root, { recursive: true, force: true });
+    // The killed child can keep the cwd open for a while on Windows; the temp dir is
+    // disposable, so cleanup is best effort here rather than a source of flakes.
+    try {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      // leave the temp directory behind
+    }
   });
 
   it("reuses one desktop machine per bot", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-reuse-"));
+    const root = mkdtempSync(path.join(tmpdir(), "sentrabot-desktop-reuse-"));
     const desktop = new DesktopSandboxProvider({ root });
     const first = await desktop.provision({ botId: "stable", homePath: "/unused" }, ctx);
     const second = await desktop.provision({ botId: "stable", homePath: "/unused" }, ctx);
@@ -201,7 +215,7 @@ describe("sandbox conformance", () => {
   });
 
   it("desktop file writes do not follow a final symlink outside the workspace", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-symlink-"));
+    const root = mkdtempSync(path.join(tmpdir(), "sentrabot-desktop-symlink-"));
     const desktop = new DesktopSandboxProvider({ root });
     const computer = await desktop.provision({ botId: "symlink", homePath: "/unused" }, ctx);
     const outside = path.join(root, "outside.txt");
@@ -223,7 +237,7 @@ describe("sandbox conformance", () => {
 
 describe("docker sandbox", () => {
   let spawned: ReturnType<typeof spawn> | undefined;
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-docker-conformance-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-docker-conformance-"));
 
   afterAll(async () => {
     spawned?.kill("SIGTERM");
@@ -239,7 +253,7 @@ describe("docker sandbox", () => {
     const token = "sandbox-conformance-token";
     const url = `http://127.0.0.1:${port}`;
     const root = path.resolve(import.meta.dirname, "../../..");
-    spawned = spawn("pnpm", ["--filter", "@rakazo/sandbox-supervisor", "start"], {
+    spawned = spawn("pnpm", ["--filter", "@sentrabot/sandbox-supervisor", "start"], {
       cwd: root,
       env: {
         ...process.env,
@@ -279,7 +293,7 @@ function dockerAvailable() {
 
 function hasAnySandboxImage() {
   try {
-    execSync("docker image inspect sentra-agent/computer:local", { stdio: "ignore", timeout: 8_000 });
+    execSync("docker image inspect sentrabot/computer:local", { stdio: "ignore", timeout: 8_000 });
     return true;
   } catch {
     return false;

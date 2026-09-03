@@ -1,10 +1,10 @@
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
-import type { RakazoDesktop } from "@rakazo/contracts";
+import type { SentraBotDesktop } from "@sentrabot/contracts";
 
 const fixture = `<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Sentra Agent desktop smoke</title></head>
+  <head><meta charset="utf-8"><title>Sentra Bot desktop smoke</title></head>
   <body><main>Desktop fixture ready</main></body>
 </html>`;
 
@@ -14,23 +14,26 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       ...process.env,
-      RAKAZO_WEB_URL: `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`,
+      SENTRABOT_WEB_URL: `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`,
     },
   });
 
   try {
     const page = await app.firstWindow();
     await expect(page.getByText("Desktop fixture ready")).toBeVisible();
-    await expect(page).toHaveTitle("Sentra Agent desktop smoke");
+    await expect(page).toHaveTitle("Sentra Bot desktop smoke");
 
     const renderer = await page.evaluate(async () => {
-      const desktop = (window as typeof window & { rakazoDesktop?: RakazoDesktop }).rakazoDesktop;
+      const desktop = (window as typeof window & { sentrabotDesktop?: SentraBotDesktop })
+        .sentrabotDesktop;
 
       return {
         bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
         windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
+        updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
         platform: desktop?.platform,
         state: await desktop?.window.state(),
+        update: await desktop?.update.state(),
         nodeGlobals: {
           require: typeof (window as unknown as { require?: unknown }).require,
           process: typeof (window as unknown as { process?: unknown }).process,
@@ -39,10 +42,13 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       };
     });
 
-    expect(renderer.bridgeKeys).toEqual(["platform", "window"]);
+    expect(renderer.bridgeKeys).toEqual(["oauth", "platform", "update", "window"]);
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
+    expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
     expect(renderer.platform).toBe(process.platform);
     expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
+    // An unpackaged run has no update feed, and that is reported as a state rather than an error.
+    expect(renderer.update).toMatchObject({ phase: "unsupported", availableVersion: null });
     expect(renderer.nodeGlobals).toEqual({
       require: "undefined",
       process: "undefined",

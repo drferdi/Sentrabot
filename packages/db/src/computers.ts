@@ -1,7 +1,7 @@
-import type { ComputerMode } from "@rakazo/contracts";
+import type { ComputerMode } from "@sentrabot/contracts";
 import type { PrismaClient } from "./client.js";
 
-export type { ComputerMode } from "@rakazo/contracts";
+export type { ComputerMode } from "@sentrabot/contracts";
 
 export function parseComputerMode(scope: string): ComputerMode {
   if (scope === "team" || scope === "dedicated") return scope;

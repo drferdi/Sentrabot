@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createThreadEvents } from "@rakazo/db";
+import { approvalEffectKey } from "@sentrabot/core/node/approval-effect-key";
+import { createThreadEvents } from "@sentrabot/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 process.env.WAKEUP_DRIVER = "memory";
@@ -13,7 +14,7 @@ const describeIntegration = hasDb ? describe : describe.skip;
 
 describeIntegration("run executor lifecycle", () => {
   let handles: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts")["createApp"]>>;
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-executor-lifecycle-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-executor-lifecycle-"));
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   beforeAll(async () => {
@@ -88,17 +89,19 @@ describeIntegration("run executor lifecycle", () => {
     ).resolves.toMatchObject({ status });
   });
 
-  it("fails closed when a retried external effect has an uncertain outcome", async () => {
-    const seeded = await seedRun("uncertain-effect", "write this to the destination crm as a note");
-    const executionId = `${seeded.run.id}:destination.write`;
+  it("records an uncertain result without replaying an interrupted external effect", async () => {
+    const prompt = "write this to the destination crm as a note";
+    const seeded = await seedRun("uncertain-effect", prompt);
+    const args = { collection: "notes", title: "Sentra Bot result", body: prompt };
+    const executionId = approvalEffectKey(seeded.run.id, "destination.write", args);
     await handles.prisma.externalEffect.create({
       data: {
         workspaceId: seeded.me.workspaceId,
         runId: seeded.run.id,
         kind: "destination.write",
         idempotencyKey: executionId,
-        status: "intended",
-        request: { collection: "notes", title: "Result", body: "unknown" },
+        status: "executing",
+        request: args,
       },
     });
     const recordsBefore = handles.connector.records.length;
@@ -110,21 +113,64 @@ describeIntegration("run executor lifecycle", () => {
       handles.prisma.attempt.findFirstOrThrow({ where: { runId: seeded.run.id } }),
       handles.prisma.externalEffect.findUniqueOrThrow({ where: { idempotencyKey: executionId } }),
     ]);
-    expect(run).toMatchObject({
-      status: "failed",
-      error: expect.stringMatching(/uncertain outcome/),
+    expect(run).toMatchObject({ status: "completed", error: null });
+    expect(attempt).toMatchObject({ status: "completed", error: null });
+    expect(effect).toMatchObject({
+      status: "uncertain",
+      result: expect.objectContaining({ uncertain: true }),
     });
-    expect(attempt).toMatchObject({
-      status: "failed",
-      error: expect.stringMatching(/uncertain outcome/),
-    });
-    expect(effect.status).toBe("intended");
     expect(handles.connector.records).toHaveLength(recordsBefore);
     expect(
       await handles.prisma.event.count({
         where: { runId: seeded.run.id, type: "effect.reconciled" },
       }),
     ).toBe(1);
+  });
+
+  it("recreates the approval pause when an intended effect was interrupted before the card", async () => {
+    const prompt = "write this to the destination crm as a note";
+    const seeded = await seedRun("interrupted-before-approval", prompt);
+    const args = { collection: "notes", title: "Sentra Bot result", body: prompt };
+    const executionId = approvalEffectKey(seeded.run.id, "destination.write", args);
+    const effect = await handles.prisma.externalEffect.create({
+      data: {
+        workspaceId: seeded.me.workspaceId,
+        runId: seeded.run.id,
+        kind: "destination.write",
+        idempotencyKey: executionId,
+        status: "intended",
+        request: args,
+      },
+    });
+    await handles.prisma.actionApprovalRule.create({
+      data: {
+        workspaceId: seeded.me.workspaceId,
+        createdByUserId: seeded.me.userId,
+        effect: "require_approval",
+        matchKind: "tool",
+        matchValue: "destination.write",
+      },
+    });
+    const recordsBefore = handles.connector.records.length;
+
+    await handles.executor.continueRun(seeded.run.id, "retry-worker");
+
+    const [run, attempt, message] = await Promise.all([
+      handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      handles.prisma.attempt.findFirstOrThrow({ where: { runId: seeded.run.id } }),
+      handles.prisma.message.findFirstOrThrow({
+        where: { runId: seeded.run.id, role: "bot" },
+        orderBy: { seq: "desc" },
+      }),
+    ]);
+    expect(run.status).toBe("waiting_input");
+    expect(attempt.status).toBe("waiting_input");
+    expect(message.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "ask", approvalEffectId: effect.id, status: "pending" }),
+      ]),
+    );
+    expect(handles.connector.records).toHaveLength(recordsBefore);
   });
 
   it("fences concurrent terminal commits so only one final message is durable", async () => {
@@ -219,6 +265,77 @@ describeIntegration("run executor lifecycle", () => {
     expect(await handles.prisma.event.count({ where: { runId: seeded.run.id } })).toBe(0);
   });
 
+  it("a due routine survives a restart and fires exactly once", async () => {
+    const { createJobReconciler } = await import("@sentrabot/adapters");
+    const seeded = await seedRun("routine-restart", "seed", {
+      status: "completed",
+      completedAt: new Date(),
+    });
+    const routine = await handles.prisma.routine.create({
+      data: {
+        workspaceId: seeded.me.workspaceId,
+        botId: seeded.bot.id,
+        userId: seeded.me.userId,
+        threadId: seeded.thread.id,
+        name: "restart",
+        prompt: "write a file that says restarted",
+        // Daily: the re-armed nextRunAt stays inside setTimeout range under the memory driver.
+        crons: ["0 0 * * *"],
+        active: true,
+        nextRunAt: new Date(Date.now() - 1_000),
+      },
+    });
+    // Restart simulation: only the durable routine row exists; no in-memory wakeup job survived.
+    const reconciler = createJobReconciler(
+      { prisma: handles.prisma, jobs: handles.jobs },
+      { intervalMs: 3_600_000 },
+    );
+    try {
+      await reconciler.reconcileOnce();
+      await reconciler.reconcileOnce();
+      const deadline = Date.now() + 10_000;
+      let runs = await handles.prisma.run.findMany({ where: { routineId: routine.id } });
+      while (runs.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        runs = await handles.prisma.run.findMany({ where: { routineId: routine.id } });
+      }
+      await reconciler.reconcileOnce();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      runs = await handles.prisma.run.findMany({ where: { routineId: routine.id } });
+      expect(runs).toHaveLength(1);
+      await expect(
+        handles.prisma.routine.findUniqueOrThrow({ where: { id: routine.id } }),
+      ).resolves.toMatchObject({ lastRunAt: expect.any(Date) });
+    } finally {
+      await reconciler.stop();
+    }
+  });
+
+  it("a run waiting for permission is untouched by restart reconciliation", async () => {
+    const { createJobReconciler } = await import("@sentrabot/adapters");
+    const seeded = await seedRun("waiting-restart", "send an email", {
+      status: "waiting_input",
+      leaseOwner: "dead-worker",
+      leaseFence: 3,
+      leaseExpiresAt: new Date(Date.now() - 60_000),
+      startedAt: new Date(Date.now() - 120_000),
+    });
+    const reconciler = createJobReconciler(
+      { prisma: handles.prisma, jobs: handles.jobs },
+      { intervalMs: 3_600_000 },
+    );
+    try {
+      await reconciler.reconcileOnce();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await expect(
+        handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      ).resolves.toMatchObject({ status: "waiting_input", leaseFence: 3 });
+      expect(await handles.prisma.attempt.count({ where: { runId: seeded.run.id } })).toBe(0);
+    } finally {
+      await reconciler.stop();
+    }
+  });
+
   async function seedRun(
     label: string,
     prompt: string,
@@ -231,7 +348,7 @@ describeIntegration("run executor lifecycle", () => {
       completedAt?: Date;
     } = {},
   ) {
-    const cookie = await signup(`executor-${label}-${stamp}@rakazo.test`, `Executor ${label}`);
+    const cookie = await signup(`executor-${label}-${stamp}@sentrabot.test`, `Executor ${label}`);
     const me = await rpc<{ userId: string; workspaceId: string }>(cookie, "me");
     const bot = await rpc<{ id: string }>(cookie, "bots/create", {
       name: `Executor ${label}`,

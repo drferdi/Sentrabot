@@ -1,4 +1,4 @@
-import type { AdapterContext, SandboxProvider } from "@rakazo/adapter-kit";
+import type { AdapterContext, SandboxProvider } from "@sentrabot/adapter-kit";
 
 export async function provisionPrepared(
   provider: SandboxProvider,

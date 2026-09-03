@@ -114,7 +114,7 @@ function isAllowedTargetName(hostname: string) {
     /^10\.(?:\d{1,3}\.){2}\d{1,3}$/.test(hostname) ||
     /^172\.(?:1[6-9]|2\d|3[01])\.(?:\d{1,3})\.\d{1,3}$/.test(hostname) ||
     /^192\.168\.(?:\d{1,3})\.\d{1,3}$/.test(hostname) ||
-    /^sentra-agent-bot-[a-zA-Z0-9_.-]+$/.test(hostname)
+    /^sentrabot-bot-[a-zA-Z0-9_.-]+$/.test(hostname)
   );
 }
 

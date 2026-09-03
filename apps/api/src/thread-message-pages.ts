@@ -1,8 +1,10 @@
-import type { ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { ThreadMessage, ThreadMessagePage } from "@sentrabot/contracts";
+import type { Prisma, PrismaClient } from "@sentrabot/db";
+
+type MessageDb = PrismaClient | Prisma.TransactionClient;
 
 export async function loadMessagePage(
-  prisma: PrismaClient,
+  prisma: MessageDb,
   threadId: string,
   before: number | undefined,
   pageSize: number,
@@ -76,6 +78,8 @@ function toThreadMessage(row: {
   seq: number;
   role: string;
   blocks: Prisma.JsonValue;
+  botId: string | null;
+  replyToMessageId: string | null;
   runId: string | null;
   createdAt: Date;
 }): ThreadMessage {
@@ -85,6 +89,8 @@ function toThreadMessage(row: {
     seq: row.seq,
     role: row.role as ThreadMessage["role"],
     blocks: row.blocks as ThreadMessage["blocks"],
+    botId: row.botId ?? undefined,
+    replyToMessageId: row.replyToMessageId ?? undefined,
     runId: row.runId ?? undefined,
     createdAt: row.createdAt.toISOString(),
   };

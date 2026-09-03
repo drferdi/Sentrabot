@@ -1,5 +1,6 @@
 @import "tailwindcss";
-@import "@rakazo/ui-tokens/css";
+@import "@sentrabot/ui-tokens/css";
+@import "@sentrabot/ui-web/styles.css";
 @import "@fontsource-variable/geist/wght.css";
 
 @source "../../packages/ui-web/src/**/*.{ts,tsx}";
@@ -13,6 +14,14 @@ body,
   background: #050506;
   color: #dfdfe2;
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  /* Native widgets (select popups, scrollbars, form controls) must render dark to
+     match the app; without this the OS paints them light with light text on top. */
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #1a1a1d;
+  color: #f1f1ef;
 }
 
 .rk-scroll::-webkit-scrollbar {
@@ -35,6 +44,7 @@ body,
 
 .app-drag {
   -webkit-app-region: drag;
+  user-select: none;
 }
 
 .app-no-drag {
@@ -49,12 +59,33 @@ body,
   background-position: right 8px center;
   border: 0;
   border-radius: 8px;
-  padding: 7px 26px 7px 11px;
+  padding-block: 7px;
+  padding-inline: 11px 26px;
   color: #ececee;
   font: inherit;
   font-size: 14px;
   cursor: pointer;
   outline: none;
+}
+
+[dir="rtl"] .rk-schedule-select {
+  background-position: left 8px center;
+}
+
+@keyframes rkFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rk-fade-up {
+  opacity: 0;
+  animation: rkFadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes rkPulse {

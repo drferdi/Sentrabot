@@ -5,7 +5,7 @@ import type {
   ConnectorEvent,
   ConnectorProvider,
   ConnectorTool,
-} from "@rakazo/adapter-kit";
+} from "@sentrabot/adapter-kit";
 
 export interface DestinationRecord {
   id: string;
@@ -78,6 +78,7 @@ export class DestinationEmulator implements ConnectorProvider {
             body: { type: "string" },
           },
         },
+        route: { connectorId: "destination", toolName: "destination.write" },
       },
     ];
   }

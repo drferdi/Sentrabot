@@ -1,5 +1,5 @@
 {
-  "name": "@rakazo/testkit",
+  "name": "@sentrabot/testkit",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,11 +12,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.1",
-    "@rakazo/adapter-kit": "workspace:*",
-    "@rakazo/adapters": "workspace:*",
-    "@rakazo/contracts": "workspace:*",
-    "@rakazo/core": "workspace:*",
-    "@rakazo/db": "workspace:*",
+    "@sentrabot/adapter-kit": "workspace:*",
+    "@sentrabot/adapters": "workspace:*",
+    "@sentrabot/contracts": "workspace:*",
+    "@sentrabot/core": "workspace:*",
+    "@sentrabot/db": "workspace:*",
     "@testcontainers/postgresql": "^11.5.1",
     "pngjs": "7.0.0"
   },

@@ -1,11 +1,13 @@
-import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@sentrabot/adapter-kit";
+import type { PrismaClient, ThreadEvents } from "@sentrabot/db";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SANDBOX_IDLE_MS, sandboxIdleMs, sleepComputerIfIdle } from "./computer-idle.js";
 import {
   e2bCreateOptions,
+  isUnreachableTransportError,
   isUnrecoverableSandboxError,
   openDesktopBrowser,
+  openDesktopUrl,
 } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
@@ -72,6 +74,7 @@ describe("sandbox idle", () => {
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
+        controlRunId: null,
       },
     });
     expect(harness.events.append).toHaveBeenCalledWith(
@@ -103,6 +106,13 @@ describe("e2b create options", () => {
   it("only recreates when the sandbox is actually gone", () => {
     expect(isUnrecoverableSandboxError(new Error("sandbox not found"))).toBe(true);
     expect(isUnrecoverableSandboxError(new Error("ECONNRESET"))).toBe(false);
+    // Transient transport codes must not satisfy the replaceComputer predicate: otherwise
+    // update mode swallows a checkpoint blip, destroys the old box, and drops uncommitted work.
+    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    expect(isUnrecoverableSandboxError(reset)).toBe(false);
+    expect(isUnreachableTransportError(reset)).toBe(true);
+    expect(isUnrecoverableSandboxError(new Error("fetch failed"))).toBe(false);
+    expect(isUnreachableTransportError(new Error("fetch failed"))).toBe(true);
   });
 
   it("opens a browser on a new desktop", async () => {
@@ -117,6 +127,34 @@ describe("e2b create options", () => {
       },
     });
     expect(launched).toEqual(["google-chrome", "firefox"]);
+  });
+
+  it("opens a URL through the named browser launcher", async () => {
+    const launched: string[] = [];
+    const commands = {
+      run: async (cmd: string) => {
+        launched.push(cmd);
+        if (cmd.includes("google-chrome")) throw new Error("missing");
+        if (cmd.includes("firefox")) return { exitCode: 0 };
+        throw new Error("missing");
+      },
+    };
+    await openDesktopUrl(
+      {
+        commands,
+        launch: async () => {
+          throw new Error("should use gtk-launch via commands");
+        },
+        open: async () => {
+          throw new Error("should not fall back");
+        },
+      },
+      "https://example.com/page",
+    );
+    expect(launched).toEqual([
+      "gtk-launch 'google-chrome' 'https://example.com/page'",
+      "gtk-launch 'firefox' 'https://example.com/page'",
+    ]);
   });
 });
 

@@ -1,6 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import { emailAllowed, parseAllowlist, signupPolicyFromEnv } from "@sentrabot/core";
+import { bootstrapUserWorkspace, type PrismaClient } from "@sentrabot/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
@@ -16,20 +15,35 @@ export interface AuthEnv {
   beforeDeleteUser?: (userId: string) => Promise<void>;
 }
 
-function newId(): string {
-  return randomBytes(16).toString("hex");
+export async function resolveSignupPolicy(
+  prisma: Pick<PrismaClient, "deploymentSettings">,
+  env: Pick<AuthEnv, "signupsEnabled" | "signupAllowlist">,
+): Promise<{ enabled: boolean; allowlist: string[] }> {
+  const settings = await prisma.deploymentSettings.findUnique({
+    where: { id: "default" },
+    select: { signupsEnabled: true, signupAllowlist: true, signupPolicyInitialized: true },
+  });
+  if (settings?.signupPolicyInitialized) {
+    return {
+      enabled: settings.signupsEnabled,
+      allowlist: parseAllowlist(settings.signupAllowlist),
+    };
+  }
+  return signupPolicyFromEnv(env);
 }
 
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   return betterAuth({
-    appName: "Sentra Agent",
+    appName: "Sentra Bot",
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
-      disableSignUp: !signupsOpen(env.signupsEnabled),
+      // Signup policy is mutable deployment state, so the request hook below
+      // enforces it instead of freezing an environment value at process start.
+      disableSignUp: false,
     },
     user: {
       deleteUser: {
@@ -54,6 +68,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               where: { ownerUserId: user.id },
               data: { ownerUserId: null },
             }),
+            // Phone identities are deliberately FK-free, so clear them here
+            // or the unique phoneE164 would point at a deleted bot forever.
+            prisma.phoneIdentity.deleteMany({
+              where: { userId: user.id },
+            }),
             prisma.organization.deleteMany({
               where: { id: { in: personalOrganizationIds } },
             }),
@@ -72,12 +91,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       before: async (ctx) => {
         const path = String((ctx as { path?: string }).path ?? "");
         if (!path.includes("sign-up")) return;
-        const allowlist = parseAllowlist(env.signupAllowlist);
+        const policy = await resolveSignupPolicy(prisma, env);
+        if (!policy.enabled) {
+          throw new APIError("BAD_REQUEST", { message: "Registration is closed" });
+        }
         const email =
           typeof ctx.body === "object" && ctx.body && "email" in ctx.body
             ? String((ctx.body as { email?: string }).email ?? "")
             : "";
-        if (email && !emailAllowed(email, allowlist)) {
+        if (email && !emailAllowed(email, policy.allowlist)) {
           throw new APIError("BAD_REQUEST", { message: "Email is not allowed to register" });
         }
       },
@@ -86,52 +108,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       user: {
         create: {
           after: async (user) => {
-            const orgId = newId();
-            await prisma.organization.create({
-              data: {
-                id: orgId,
-                name: "Personal",
-                slug: `user-${user.id.slice(0, 12)}`,
-                createdAt: new Date(),
-              },
-            });
-            await prisma.member.create({
-              data: {
-                id: newId(),
-                organizationId: orgId,
-                userId: user.id,
-                role: "owner",
-                createdAt: new Date(),
-              },
-            });
-            const existing = await prisma.deploymentSettings.findUnique({
-              where: { id: "default" },
-            });
-            if (!existing) {
-              await prisma.deploymentSettings.create({
-                data: { id: "default", ownerUserId: user.id },
-              });
-            } else if (!existing.ownerUserId) {
-              await prisma.deploymentSettings.update({
-                where: { id: "default" },
-                data: { ownerUserId: user.id },
-              });
-            }
-            await prisma.memoryDocument.create({
-              data: {
-                workspaceId: orgId,
-                userId: user.id,
-                scope: "user",
-                path: "MEMORY.md",
-                content: "# User memory\n\nAccount-wide preferences live here.\n",
-              },
-            });
-            await prisma.notificationPreference.create({
-              data: {
-                workspaceId: orgId,
-                userId: user.id,
-              },
-            });
+            await bootstrapUserWorkspace(prisma, user, env);
           },
         },
       },

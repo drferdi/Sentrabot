@@ -28,7 +28,7 @@ describe("BoxSandboxProvider", () => {
         createBoxRequest: {
           ttlSeconds: 7200,
           noEnv: true,
-          env: { RAKAZO_BOT_ID: "bot-a", RAKAZO_SANDBOX: "computer" },
+          env: { SENTRABOT_BOT_ID: "bot-a", SENTRABOT_SANDBOX: "computer" },
         },
       },
       { signal: context.signal },
@@ -37,7 +37,7 @@ describe("BoxSandboxProvider", () => {
     await provider.prepare(computer, context);
     expect(
       fixture.command.mock.calls.some(([request]) =>
-        request.commandRequest.command.includes("rakazo-home/.browser-profiles"),
+        request.commandRequest.command.includes("sentrabot-home/.browser-profiles"),
       ),
     ).toBe(true);
 
@@ -56,7 +56,7 @@ describe("BoxSandboxProvider", () => {
     const executeRequest = fixture.command.mock.calls.find(([request]) =>
       request.commandRequest.command.includes("TEST_VALUE=works"),
     )?.[0];
-    expect(executeRequest?.commandRequest.cwd).toBe("rakazo-home/notes");
+    expect(executeRequest?.commandRequest.cwd).toBe("sentrabot-home/notes");
 
     await provider.writeFile(
       computer,
@@ -213,19 +213,19 @@ function boxFixture(options: { state?: string } = {}) {
     command: vi.fn(async (request: { commandRequest: { command: string; cwd?: string } }) => {
       const command = request.commandRequest.command;
       if (command.includes("TEST_VALUE=works")) return finished({ stdout: "hello\n" });
-      if (command.includes("find ") && command.includes("rakazo-home/bin")) {
-        const target = "/home/user/rakazo-home/bin/tool";
+      if (command.includes("find ") && command.includes("sentrabot-home/bin")) {
+        const target = "/home/user/sentrabot-home/bin/tool";
         return finished({
           stdout: `${Buffer.from(target).toString("base64")}\tfile\t3\t1\n`,
         });
       }
       if (
         command.includes("find ") &&
-        command.includes("rakazo-home") &&
+        command.includes("sentrabot-home") &&
         command.includes("-type f")
       ) {
         const stdout = [...files.entries()]
-          .filter(([filePath]) => filePath.startsWith("/home/user/rakazo-home/"))
+          .filter(([filePath]) => filePath.startsWith("/home/user/sentrabot-home/"))
           .map(([filePath, content]) => {
             const executable = filePath.endsWith("/bin/tool") ? "1" : "0";
             return `${Buffer.from(filePath).toString("base64")}\tfile\t${content.byteLength}\t${executable}\n`;
@@ -265,7 +265,7 @@ function boxFixture(options: { state?: string } = {}) {
       },
     ),
     readFile: vi.fn(async ({ path }: { path: string }) => {
-      const content = path.startsWith("/tmp/rakazo-observe-")
+      const content = path.startsWith("/tmp/sentrabot-observe-")
         ? Uint8Array.from([137, 80, 78, 71])
         : (files.get(path) ?? new Uint8Array());
       return {

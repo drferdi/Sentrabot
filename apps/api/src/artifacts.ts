@@ -1,17 +1,20 @@
 import { createHash } from "node:crypto";
-import type { ArtifactStore } from "@rakazo/adapter-kit";
-import type { Actor } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import type { ArtifactStore } from "@sentrabot/adapter-kit";
+import type { Actor } from "@sentrabot/contracts";
+import { ATTACHMENT_MAX_COUNT } from "@sentrabot/contracts";
 import {
   AttachmentValidationError,
   decodeAttachmentBase64,
   messageBlockForArtifact,
   promptTextForAttachments,
   validateAttachmentMimeType,
-} from "@rakazo/core";
-import { IsolationError, type PrismaClient } from "@rakazo/db";
+} from "@sentrabot/core";
+import { IsolationError, type PrismaClient } from "@sentrabot/db";
 
-function adapterContext(actor: Actor, botId: string, operationId: string) {
+/** Everything artifact ownership needs; a full Actor satisfies it. */
+export type ArtifactOwner = Pick<Actor, "userId" | "workspaceId">;
+
+function adapterContext(actor: ArtifactOwner, botId: string, operationId: string) {
   return {
     operationId,
     traceId: operationId,
@@ -28,10 +31,42 @@ export async function createOwnedArtifact(
     artifacts: ArtifactStore;
   },
   actor: Actor,
-  input: { botId: string; name: string; mimeType: string; contentBase64: string },
+  input: {
+    botId: string;
+    groupId?: string;
+    name: string;
+    mimeType: string;
+    contentBase64: string;
+  },
 ) {
   validateAttachmentMimeType(input.mimeType);
-  const bytes = decodeAttachmentBase64(input.contentBase64);
+  return createArtifactFromBytes(deps, actor, {
+    ...input,
+    bytes: decodeAttachmentBase64(input.contentBase64),
+  });
+}
+
+/**
+ * Store already-decoded bytes. Inbound phone media arrives as a download, not
+ * as base64, so it skips the transport decode but keeps the same ownership,
+ * hashing, and orphan-cleanup guarantees.
+ */
+export async function createArtifactFromBytes(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+  },
+  actor: ArtifactOwner,
+  input: {
+    botId: string;
+    groupId?: string;
+    name: string;
+    mimeType: string;
+    bytes: Uint8Array;
+  },
+) {
+  validateAttachmentMimeType(input.mimeType);
+  const { bytes } = input;
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put(
     { name: input.name, mimeType: input.mimeType, bytes },
@@ -44,6 +79,7 @@ export async function createOwnedArtifact(
         workspaceId: actor.workspaceId,
         userId: actor.userId,
         botId: input.botId,
+        groupId: input.groupId,
         name: input.name,
         mimeType: input.mimeType,
         size: bytes.byteLength,
@@ -58,6 +94,7 @@ export async function createOwnedArtifact(
   return {
     id: row.id,
     botId: row.botId,
+    groupId: row.groupId,
     runId: row.runId,
     name: row.name,
     mimeType: row.mimeType,
@@ -78,17 +115,59 @@ export async function getOwnedArtifact(
     where: {
       id: input.artifactId,
       botId: input.botId,
+      groupId: null,
       workspaceId: actor.workspaceId,
+      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
-  const bytes = await deps.artifacts.get(
+  return readArtifact(deps.artifacts, actor, row, input.botId);
+}
+
+export async function getWorkspaceArtifact(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+  },
+  actor: Actor,
+  input: { artifactId: string; groupId: string; contextBotId: string },
+) {
+  const row = await deps.prisma.artifact.findFirst({
+    where: {
+      id: input.artifactId,
+      groupId: input.groupId,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+    },
+  });
+  if (!row) throw new IsolationError();
+  return readArtifact(deps.artifacts, actor, row, input.contextBotId);
+}
+
+async function readArtifact(
+  artifacts: ArtifactStore,
+  actor: Actor,
+  row: {
+    id: string;
+    botId: string | null;
+    groupId: string | null;
+    runId: string | null;
+    storageKey: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    createdAt: Date;
+  },
+  contextBotId: string,
+) {
+  const bytes = await artifacts.get(
     row.storageKey,
-    adapterContext(actor, input.botId, `artifact-get:${input.artifactId}`),
+    adapterContext(actor, contextBotId, `artifact-get:${row.id}`),
   );
   return {
     id: row.id,
     botId: row.botId,
+    groupId: row.groupId,
     runId: row.runId,
     name: row.name,
     mimeType: row.mimeType,
@@ -98,41 +177,27 @@ export async function getOwnedArtifact(
   };
 }
 
-export async function resolveSendAttachments(
-  deps: { prisma: PrismaClient },
-  actor: Actor,
-  botId: string,
-  artifactIds: string[] | undefined,
-) {
+type SendAttachmentRow = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  storageKey: string;
+};
+
+function normalizeAttachmentIds(artifactIds: string[] | undefined) {
   const ids = [...new Set(artifactIds ?? [])];
   if (ids.length > ATTACHMENT_MAX_COUNT) {
     throw new AttachmentValidationError(`At most ${ATTACHMENT_MAX_COUNT} attachments per message`);
   }
-  if (!ids.length) {
-    return {
-      blocks: [] as ReturnType<typeof messageBlockForArtifact>[],
-      artifacts: [] as Array<{
-        id: string;
-        name: string;
-        mimeType: string;
-        size: number;
-        storageKey: string;
-      }>,
-    };
-  }
+  return ids;
+}
 
-  const rows = await deps.prisma.artifact.findMany({
-    where: {
-      id: { in: ids },
-      botId,
-      workspaceId: actor.workspaceId,
-    },
-  });
+function toAttachmentResolution<T extends SendAttachmentRow>(ids: string[], rows: T[]) {
   if (rows.length !== ids.length) throw new IsolationError();
-
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const ordered = ids.map((id) => byId.get(id)!);
-  const blocks = ordered.map((row) =>
+  const artifacts = ids.map((id) => byId.get(id)!);
+  const blocks = artifacts.map((row) =>
     messageBlockForArtifact({
       id: row.id,
       name: row.name,
@@ -140,7 +205,54 @@ export async function resolveSendAttachments(
       size: row.size,
     }),
   );
-  return { blocks, artifacts: ordered };
+  return { blocks, artifacts };
+}
+
+export async function resolveSendAttachments(
+  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  actor: Actor,
+  botId: string,
+  artifactIds: string[] | undefined,
+) {
+  const ids = normalizeAttachmentIds(artifactIds);
+  if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: ids },
+      botId,
+      groupId: null,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+    },
+  });
+  return toAttachmentResolution(ids, rows);
+}
+
+export async function resolveGroupSendAttachments(
+  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  actor: Actor,
+  groupId: string,
+  memberBotIds: string[],
+  artifactIds: string[] | undefined,
+) {
+  const ids = normalizeAttachmentIds(artifactIds);
+  if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: ids },
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      OR: [
+        { groupId },
+        // Accept artifacts uploaded by a current member before group ownership
+        // was persisted. Removing that member revokes this legacy fallback.
+        { groupId: null, botId: { in: memberBotIds } },
+      ],
+    },
+  });
+  return toAttachmentResolution(ids, rows);
 }
 
 export function buildUserMessageBlocks(
@@ -157,6 +269,22 @@ export function buildUserMessageBlocks(
 export function buildSendPrompt(
   text: string | undefined,
   artifacts: Array<{ name: string; mimeType: string; size: number }>,
+  connectorNames: string[] = [],
 ) {
-  return promptTextForAttachments(text, artifacts);
+  const prompt = promptTextForAttachments(text, artifacts);
+  if (connectorNames.length === 0) return prompt;
+  const marker = "Use these connectors if relevant:";
+  const existing = new RegExp(`^${marker} (.*)\\.$`, "m").exec(prompt);
+  const names = [
+    ...new Set([
+      ...(existing?.[1]
+        ?.split(",")
+        .map((name) => name.trim())
+        .filter(Boolean) ?? []),
+      ...connectorNames.map((name) => name.trim()).filter(Boolean),
+    ]),
+  ];
+  const line = `${marker} ${names.join(", ")}.`;
+  if (existing) return prompt.replace(existing[0], () => line);
+  return prompt ? `${prompt}\n\n${line}` : line;
 }

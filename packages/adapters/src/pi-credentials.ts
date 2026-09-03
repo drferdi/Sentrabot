@@ -5,7 +5,7 @@ import type {
   CredentialStore,
   OAuthCredential,
 } from "@earendil-works/pi-ai";
-import type { AgentModelOAuthCredential } from "@rakazo/adapter-kit";
+import type { AgentModelOAuthCredential } from "@sentrabot/adapter-kit";
 
 export function toOAuthCredential(value: AgentModelOAuthCredential): OAuthCredential {
   return { ...value, type: "oauth" };
@@ -13,7 +13,7 @@ export function toOAuthCredential(value: AgentModelOAuthCredential): OAuthCreden
 
 /**
  * Request-scoped Pi store for one already-authorized provider. Pi's default
- * in-memory store cannot see Sentra Agent's encrypted database; refreshes are
+ * in-memory store cannot see Sentra Bot's encrypted database; refreshes are
  * serialized here and published back for encryption.
  */
 export class PiRuntimeCredentialStore implements CredentialStore {

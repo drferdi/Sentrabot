@@ -1,27 +1,47 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `bot-crud-${stamp}@rakazo.test`, "password12", "Bot CRUD");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await signup(page, `bot-crud-${stamp}@sentrabot.test`, "password12", "Bot CRUD");
+  await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
   const botList = page.locator("aside").first();
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   await page.locator("label:has-text('Name') input").fill("Researcher");
-  await page.locator("label:has-text('Title') input").fill("Market researcher");
+  const longTitle = `Market researcher ${"and source verifier ".repeat(9)}`;
+  const normalizedLongTitle = longTitle.trim();
+  expect(longTitle.length).toBeGreaterThan(160);
+  await page.locator("label:has-text('Title') input").fill(longTitle);
   await page
     .locator("label:has-text('Description') textarea")
     .fill("Finds reliable sources and turns them into concise briefs.");
   await captureScreenshot(page, testInfo, "26-new-bot-form");
+  await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByTestId("create-bot-error")).toHaveText("Failed to fetch");
+  await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "26a-new-bot-error");
+  await page.unroute("**/rpc/bots/create");
+  let failedPostCreateRefresh = false;
+  await page.route("**/rpc/botSections/list", async (route) => {
+    if (failedPostCreateRefresh) {
+      await route.fallback();
+      return;
+    }
+    failedPostCreateRefresh = true;
+    await route.abort("failed");
+  });
   await page.getByRole("button", { name: "Create", exact: true }).click();
 
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
+  expect(failedPostCreateRefresh).toBe(true);
+  await page.unroute("**/rpc/botSections/list");
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
@@ -31,14 +51,41 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27-created-bot");
 
   await page.locator("main").getByRole("button", { name: "Researcher", exact: true }).click();
+  await expect(page.getByText("Settings", { exact: true })).toBeVisible();
   const nameInput = page.locator("label:has-text('Name') input");
   const titleInput = page.locator("label:has-text('Title') input");
   const descriptionInput = page.locator("label:has-text('Description') textarea");
   await expect(nameInput).toHaveValue("Researcher");
-  await expect(titleInput).toHaveValue("Market researcher");
+  await expect(titleInput).toHaveValue(normalizedLongTitle);
   await expect(descriptionInput).toHaveValue(
     "Finds reliable sources and turns them into concise briefs.",
   );
+  const settings = page.getByTestId("bot-settings");
+  const modelSelect = settings.locator("label:has-text('Model') select");
+  const teamComputer = settings.getByRole("button", { name: "Team" });
+  const openWork = settings.getByTestId("bot-scratchpad");
+  await expect(teamComputer).toBeHidden();
+  await expect(modelSelect).toBeHidden();
+  await expect(openWork).toBeHidden();
+  await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "27a-settings-panel");
+  await settings.getByText("Advanced", { exact: true }).click();
+  await expect(teamComputer).toBeVisible();
+  await expect(openWork).toBeVisible();
+  await expect(modelSelect).toBeVisible();
+  await expect(modelSelect).toContainText("Workspace default");
+  await captureScreenshot(page, testInfo, "27a-bot-settings-model");
+  await page.getByRole("button", { name: "Show computer" }).click();
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
+  await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();
+  // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
+  // chrome, then wait until any overlay has cleared — avoid Locator.or() strict-mode multi-hits.
+  const bootOverlay = page.getByText(/Booting up .* computer/);
+  await expect(sidePanel.getByRole("button", { name: "Take control" })).toBeVisible();
+  await expect(bootOverlay).toBeHidden();
+  await captureScreenshot(page, testInfo, "27b-computer-panel");
+  await page.getByRole("button", { name: "Show settings" }).click();
 
   await nameInput.fill("Atlas");
   await titleInput.fill("Research lead");

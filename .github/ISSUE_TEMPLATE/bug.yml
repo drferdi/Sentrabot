@@ -1,5 +1,5 @@
 name: Bug report
-description: Something is broken in Sentra Agent
+description: Something is broken in Sentra Bot
 title: "[Bug]: "
 labels:
   - bug
@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com) — do not use this form. See [SECURITY.md](https://github.com/elie222/rakazo/blob/main/SECURITY.md).
+        For **security vulnerabilities**, email [security@sentrabot.com](mailto:security@sentrabot.com) — do not use this form. See [SECURITY.md](https://github.com/drferdii/sentrabot/blob/main/SECURITY.md).
 
   - type: checkboxes
     id: not-security
@@ -55,7 +55,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Sentra Agent version or commit
+      label: Sentra Bot version or commit
       placeholder: v0.1.0 or abc1234
     validations:
       required: true

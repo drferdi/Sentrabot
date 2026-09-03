@@ -1,4 +1,4 @@
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers } from "@sentrabot/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
 
@@ -12,6 +12,9 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "routine.wakeup": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
+    "skill.teaching-expire": vi.fn(async () => undefined),
+    "history.compact": vi.fn(async () => undefined),
+    "phone.deliver": vi.fn(async () => undefined),
     ...overrides,
   };
 }

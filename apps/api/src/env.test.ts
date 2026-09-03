@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadEnv } from "./env.js";
 
 const base = {
-  DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
+  DATABASE_URL: "postgres://sentrabot:sentrabot@127.0.0.1:5433/sentrabot",
   NODE_ENV: "test",
 };
 
@@ -12,6 +12,7 @@ describe("loadEnv", () => {
     expect(env.agentRuntime).toBe("pi");
     expect(env.sandboxProvider).toBe("docker");
     expect(env.wakeupDriver).toBe("graphile");
+    expect(env.apiHost).toBe("127.0.0.1");
   });
 
   it("keeps explicit emulator settings for pnpm test", () => {
@@ -24,6 +25,27 @@ describe("loadEnv", () => {
     expect(env.agentRuntime).toBe("scripted");
     expect(env.sandboxProvider).toBe("fake");
     expect(env.wakeupDriver).toBe("memory");
+  });
+
+  it("falls back to none when a remote provider key is missing", () => {
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "e2b",
+      }).sandboxProvider,
+    ).toBe("none");
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "none",
+      }).sandboxProvider,
+    ).toBe("none");
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "",
+      }).sandboxProvider,
+    ).toBe("none");
   });
 
   it("loads provider-specific Daytona configuration", () => {
@@ -72,6 +94,8 @@ describe("loadEnv", () => {
         NODE_ENV: "production",
         BETTER_AUTH_SECRET: "dev-secret-change-me-please-32chars",
         ENCRYPTION_KEY: "real-encryption-key-value",
+        SANDBOX_SUPERVISOR_TOKEN: "real-supervisor-token-with-enough-length",
+        SCREEN_PROXY_SECRET: "real-screen-proxy-secret-with-enough-length",
       }),
     ).toThrow(/BETTER_AUTH_SECRET/);
   });
@@ -82,8 +106,81 @@ describe("loadEnv", () => {
       NODE_ENV: "production",
       BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
       ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "e2b",
+      API_HOST: "0.0.0.0",
     });
     expect(env.authSecret).toBe("prod-auth-secret-with-enough-length");
     expect(env.encryptionKey).toBe("prod-encryption-key-with-enough-length");
+    expect(env.sandboxSupervisorToken).toBeUndefined();
+    expect(env.screenProxySecret).toBe("prod-screen-proxy-secret-with-enough-length");
+    expect(env.apiHost).toBe("0.0.0.0");
+  });
+
+  it("keeps the experimental control-plane relay off unless explicitly enabled", () => {
+    expect(loadEnv(base).controlPlaneRelay).toBe(false);
+    expect(loadEnv({ ...base, SENDBLUE_API_KEY_ID: "x" }).controlPlaneRelay).toBe(false);
+    expect(loadEnv({ ...base, SENTRABOT_CONTROL_PLANE_RELAY: "enabled" }).controlPlaneRelay).toBe(
+      true,
+    );
+    expect(loadEnv({ ...base, SENTRABOT_CONTROL_PLANE_RELAY: "true" }).controlPlaneRelay).toBe(
+      false,
+    );
+  });
+
+  it("falls back to none in production when Docker has no supervisor token", () => {
+    const env = loadEnv({
+      DATABASE_URL: base.DATABASE_URL,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+      ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "docker",
+    });
+    expect(env.sandboxProvider).toBe("none");
+    expect(env.sandboxSupervisorToken).toBeUndefined();
+  });
+
+  it("requires a dedicated supervisor token when Docker stays selected", () => {
+    expect(() =>
+      loadEnv({
+        DATABASE_URL: base.DATABASE_URL,
+        NODE_ENV: "production",
+        BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+        ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+        SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+        SANDBOX_PROVIDER: "docker",
+        SANDBOX_SUPERVISOR_TOKEN: "too-short",
+      }),
+    ).toThrow(/SANDBOX_SUPERVISOR_TOKEN/);
+  });
+
+  it("exposes a deployed git revision when GIT_SHA is set", () => {
+    expect(loadEnv(base).gitSha).toBeUndefined();
+    expect(loadEnv({ ...base, GIT_SHA: "  3c6e209  " }).gitSha).toBe("3c6e209");
+    expect(loadEnv({ ...base, SENTRABOT_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
+  });
+
+  it("loads optional updater sidecar wiring without requiring the token at boot", () => {
+    expect(loadEnv(base).updaterUrl).toBeUndefined();
+    expect(loadEnv(base).updaterToken).toBeUndefined();
+    const env = loadEnv({
+      ...base,
+      SENTRABOT_UPDATER_URL: " http://updater:7092 ",
+      SENTRABOT_UPDATER_TOKEN: " fake-review-updater-token-000000000000 ",
+    });
+    expect(env.updaterUrl).toBe("http://updater:7092");
+    expect(env.updaterToken).toBe("fake-review-updater-token-000000000000");
+  });
+
+  it("loads Managed AI only with an explicit durable Free cost budget", () => {
+    const env = loadEnv({
+      ...base,
+      OPENAI_API_KEY: "test-openai-key",
+      SENTRABOT_MANAGED_AI_FREE_BUDGET_MICROS: "2000000",
+    });
+
+    expect(env.openaiApiKey).toBe("test-openai-key");
+    expect(env.managedAiFreeBudgetMicros).toBe(2_000_000n);
   });
 });

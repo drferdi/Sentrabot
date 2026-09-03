@@ -1,6 +1,6 @@
 {
-  "name": "Sentra Agent",
-  "short_name": "Sentra Agent",
+  "name": "Sentra Bot",
+  "short_name": "Sentra Bot",
   "description": "Your team of always-on agents.",
   "start_url": "/",
   "display": "standalone",

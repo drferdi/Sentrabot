@@ -1,17 +1,17 @@
 {
-  "name": "@rakazo/sandbox-supervisor",
+  "name": "@sentrabot/sandbox-supervisor",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node ../../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.1",
-    "@rakazo/core": "workspace:*",
+    "@sentrabot/core": "workspace:*",
     "dockerode": "^4.0.7",
     "hono": "^4.9.6",
     "tsx": "^4.20.5",

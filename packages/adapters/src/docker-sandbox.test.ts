@@ -1,4 +1,4 @@
-import type { ProcessEvent } from "@rakazo/adapter-kit";
+import type { ProcessEvent } from "@sentrabot/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 
@@ -37,7 +37,7 @@ describe("Docker sandbox", () => {
 
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       argv: ["sleep", "10"],
-      cwd: "/home/rakazo",
+      cwd: "/home/sentrabot",
       timeoutMs: 75,
     });
     expect(events).toEqual([
@@ -45,9 +45,7 @@ describe("Docker sandbox", () => {
       { type: "stderr", data: "command timed out after 75 ms\n" },
       { type: "exit", code: 124 },
     ]);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      "x-rakazo-screen-id": "bot",
-    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-sentrabot-screen-id");
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
@@ -66,10 +64,9 @@ describe("Docker sandbox", () => {
         method: "DELETE",
         headers: expect.objectContaining({
           authorization: "Bearer test-token",
-          "x-rakazo-bot-id": "home-bot",
-          "x-rakazo-screen-id": "bot",
-          "x-rakazo-screen-lease-id": "run-1:1",
-          "x-rakazo-workspace-id": "workspace",
+          "x-sentrabot-bot-id": "home-bot",
+          "x-sentrabot-screen-lease-id": "run-1:1",
+          "x-sentrabot-workspace-id": "workspace",
         }),
       }),
     );
@@ -94,5 +91,48 @@ describe("Docker sandbox", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+  });
+
+  it("surfaces a supervisor failure from stop and destroy instead of swallowing it", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ error: "unauthorized" }, { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "stale-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    await expect(provider.stop(computer, context)).rejects.toThrow(
+      'sandbox stop failed: 401 {"error":"unauthorized"}',
+    );
+    await expect(provider.destroy(computer, context)).rejects.toThrow(
+      'sandbox destroy failed: 401 {"error":"unauthorized"}',
+    );
+
+    fetchMock.mockImplementation(async () => new Response("boom", { status: 500 }));
+    await expect(provider.stop(computer, context)).rejects.toThrow("sandbox stop failed: 500 boom");
+    await expect(provider.destroy(computer, context)).rejects.toThrow(
+      "sandbox destroy failed: 500 boom",
+    );
+  });
+
+  it("treats a computer the supervisor no longer knows as already stopped and destroyed", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ error: "computer not found" }, { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    await expect(provider.stop(computer, context)).resolves.toBeUndefined();
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

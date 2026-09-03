@@ -2,9 +2,10 @@ import {
   type AdapterContext,
   computerControlExpireJob,
   type JobPublisher,
+  runContinueJob,
   type SandboxProvider,
-} from "@rakazo/adapter-kit";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+} from "@sentrabot/adapter-kit";
+import type { PrismaClient, ThreadEvents } from "@sentrabot/db";
 import { toComputerRef } from "./computer-support.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
@@ -40,6 +41,59 @@ export function scheduleComputerControlExpiry(
   expiresAt: Date,
 ): Promise<void> {
   return jobs.enqueue(computerControlExpireJob(computerId, leaseId, expiresAt));
+}
+
+export async function enqueueTakeoverContinuation(
+  jobs: JobPublisher,
+  runId: string | null,
+): Promise<void> {
+  if (!runId) return;
+  try {
+    await jobs.enqueue(runContinueJob(runId));
+  } catch (error) {
+    // The release is durable; reconciliation will retry this queued run.
+    console.error("takeover continuation enqueue", error);
+  }
+}
+
+export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
+  return new Date(Math.max(now.getTime() + takeoverLeaseMs(), teachingExpiresAt.getTime()));
+}
+
+export async function extendActiveComputerControl(
+  prisma: PrismaClient,
+  jobs: JobPublisher,
+  computer: {
+    id: string;
+    controlHolder: string;
+    controlLeaseId: string | null;
+    controlLeaseExpiresAt: Date | null;
+    controlBotId: string | null;
+  },
+  botId: string,
+  until: Date,
+  now = new Date(),
+): Promise<boolean> {
+  if (
+    !hasActiveComputerControl(computer, now) ||
+    computer.controlBotId !== botId ||
+    !computer.controlLeaseId
+  ) {
+    return false;
+  }
+  const expiresAt = teachingControlLeaseExpiresAt(until, now);
+  const extended = await prisma.computer.updateMany({
+    where: {
+      id: computer.id,
+      controlHolder: "user",
+      controlBotId: botId,
+      controlLeaseId: computer.controlLeaseId,
+    },
+    data: { controlLeaseExpiresAt: expiresAt },
+  });
+  if (extended.count !== 1) return false;
+  await scheduleComputerControlExpiry(jobs, computer.id, computer.controlLeaseId, expiresAt);
+  return true;
 }
 
 export async function expireComputerControl(
@@ -88,12 +142,15 @@ export async function expireComputerControl(
     await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
   }
 
-  return deps.events.finalizeComputerControlRelease({
+  const released = await deps.events.finalizeComputerControlRelease({
     workspaceId: computer.workspaceId,
     computerId: computer.id,
     botId,
+    runId: computer.controlRunId,
     leaseId,
     holder: "none",
     reason: "expired",
   });
+  await enqueueTakeoverContinuation(deps.jobs, released ? released.runId : null);
+  return Boolean(released);
 }

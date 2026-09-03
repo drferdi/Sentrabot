@@ -8,16 +8,16 @@
 	abort @direct_origin
 }
 
-http://{$RAKAZO_HOST:app.example.com} {
+http://{$SENTRABOT_HOST:app.example.com} {
 	import cloudflare_only
-	redir https://{$RAKAZO_HOST:app.example.com}{uri} 308
+	redir https://{$SENTRABOT_HOST:app.example.com}{uri} 308
 }
 
 :80 {
 	abort
 }
 
-{$RAKAZO_HOST:app.example.com} {
+{$SENTRABOT_HOST:app.example.com} {
 	import cloudflare_only
 	encode zstd gzip
 

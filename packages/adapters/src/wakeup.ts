@@ -4,7 +4,7 @@ import {
   dispatchBackgroundJob,
   type JobPublisher,
   type JobWorkerHost,
-} from "@rakazo/adapter-kit";
+} from "@sentrabot/adapter-kit";
 import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
 
 export class GraphileJobPublisher implements JobPublisher {

@@ -4,7 +4,14 @@ import {
   cronFromPreset,
   describeCronPreset,
   formatCron,
+  hasMixedOneShotSchedule,
+  isOneShotRoutineCrons,
+  nextCronDate,
+  nextCronDateAcross,
+  nextCronDateAcrossStrict,
+  ONCE_ROUTINE_CRON,
   presetFromCron,
+  resolveRoutineNextRunAt,
 } from "./cron.js";
 
 function preset(partial: Partial<CronPreset> & Pick<CronPreset, "freq">): CronPreset {
@@ -39,6 +46,9 @@ describe("cronFromPreset", () => {
   it("keeps advanced expressions", () => {
     expect(cronFromPreset(preset({ freq: "Advanced", cron: "0 10 15 * *" }))).toBe("0 10 15 * *");
     expect(cronFromPreset(preset({ freq: "Advanced", cron: "" }))).toBe("*/3 * * * *");
+    expect(cronFromPreset(preset({ freq: "Advanced", cron: ONCE_ROUTINE_CRON }))).toBe(
+      ONCE_ROUTINE_CRON,
+    );
   });
 });
 
@@ -85,6 +95,25 @@ describe("presetFromCron", () => {
       freq: "Advanced",
       cron: "30 14 15 * *",
     });
+    expect(presetFromCron(ONCE_ROUTINE_CRON)).toMatchObject({
+      freq: "Advanced",
+      cron: ONCE_ROUTINE_CRON,
+    });
+  });
+});
+
+describe("resolveRoutineNextRunAt", () => {
+  it("preserves existing nextRunAt for one-shot routines", () => {
+    const existing = new Date("2030-01-01T09:00:00.000Z");
+    expect(resolveRoutineNextRunAt(ONCE_ROUTINE_CRON, new Date(), "UTC", existing)).toEqual(
+      existing,
+    );
+    expect(resolveRoutineNextRunAt(ONCE_ROUTINE_CRON, new Date(), "UTC", null)).toBeNull();
+  });
+
+  it("computes cron schedules for repeating routines", () => {
+    const next = resolveRoutineNextRunAt("*/1 * * * *", new Date(), "UTC", null);
+    expect(next?.getTime()).toBeGreaterThan(Date.now());
   });
 });
 
@@ -93,9 +122,149 @@ describe("formatCron", () => {
     expect(formatCron("0 9 * * 1")).toBe("Every Monday at 9:00 AM");
     expect(formatCron("0 8 * * 1-5")).toBe("Weekdays at 8:00 AM");
     expect(formatCron("*/15 * * * *")).toBe("Every 15 minutes");
+    expect(formatCron(ONCE_ROUTINE_CRON)).toBe("One-time");
     expect(describeCronPreset(preset({ freq: "Every hour" }))).toEqual({
       lead: "Every hour",
       detail: "",
     });
+  });
+});
+
+describe("nextCronDate", () => {
+  it("returns the next matching time today for a daily cron", () => {
+    const from = new Date("2026-08-24T10:30:00.000Z");
+    expect(nextCronDate("0 11 * * *", from)).toEqual(new Date("2026-08-24T11:00:00.000Z"));
+  });
+
+  it("honors day-of-week instead of matching the same hour tomorrow", () => {
+    // Monday 13:52 UTC; the weekly slot is Monday 13:00, so the next fire is
+    // the following Monday, not Tuesday.
+    const from = new Date("2026-08-24T13:52:00.000Z");
+    expect(nextCronDate("0 13 * * 1", from)).toEqual(new Date("2026-08-31T13:00:00.000Z"));
+  });
+
+  it("maps cron day 7 to Sunday", () => {
+    const from = new Date("2026-08-26T12:00:00.000Z"); // Wednesday
+    expect(nextCronDate("0 9 * * 7", from)).toEqual(new Date("2026-08-30T09:00:00.000Z"));
+  });
+
+  it("supports day 7 inside composite day expressions", () => {
+    const from = new Date("2026-08-26T12:00:00.000Z"); // Wednesday
+    // 1,7 = Monday and Sunday -> next is Sunday Aug 30.
+    expect(nextCronDate("0 9 * * 1,7", from)).toEqual(new Date("2026-08-30T09:00:00.000Z"));
+    // 5-7 = Friday, Saturday, Sunday -> next is Friday Aug 28.
+    expect(nextCronDate("0 9 * * 5-7", from)).toEqual(new Date("2026-08-28T09:00:00.000Z"));
+    expect(nextCronDate("0 9 * * 0-7", from)).toEqual(new Date("2026-08-27T09:00:00.000Z"));
+  });
+
+  it("honors day-of-month and month fields", () => {
+    const from = new Date("2026-08-24T10:30:00.000Z");
+    expect(nextCronDate("0 9 1 * *", from)).toEqual(new Date("2026-09-01T09:00:00.000Z"));
+    expect(nextCronDate("0 9 1 10 *", from)).toEqual(new Date("2026-10-01T09:00:00.000Z"));
+  });
+
+  it("evaluates the schedule in the routine timezone", () => {
+    // 10:00 UTC is 06:00 in New York on the same day, so a 7 AM America/New_York
+    // daily slot still fires later the same UTC day.
+    const from = new Date("2026-08-24T10:00:00.000Z");
+    expect(nextCronDate("0 7 * * *", from, "America/New_York")).toEqual(
+      new Date("2026-08-24T11:00:00.000Z"),
+    );
+  });
+
+  it("falls back to UTC for an unknown timezone", () => {
+    const from = new Date("2026-08-24T10:00:00.000Z");
+    expect(nextCronDate("0 7 * * *", from, "Mars/Olympus")).toEqual(
+      new Date("2026-08-25T07:00:00.000Z"),
+    );
+  });
+
+  it("keeps the local hour across daylight saving time", () => {
+    const from = new Date("2026-03-07T12:01:00.000Z");
+    expect(nextCronDate("0 7 * * *", from, "America/New_York")).toEqual(
+      new Date("2026-03-08T11:00:00.000Z"),
+    );
+  });
+
+  it("rejects malformed expressions instead of scheduling one minute later", () => {
+    const from = new Date("2026-08-24T10:00:00.000Z");
+    expect(() => nextCronDate("61 25 * * *", from)).toThrow();
+    expect(() => nextCronDate("not-a-cron", from)).toThrow();
+    expect(() => nextCronDate("0 0 9 * * *", from)).toThrow();
+  });
+});
+
+describe("isOneShotRoutineCrons", () => {
+  it("is one-shot only for a single @once schedule", () => {
+    expect(isOneShotRoutineCrons([ONCE_ROUTINE_CRON])).toBe(true);
+    expect(isOneShotRoutineCrons(["0 9 * * *"])).toBe(false);
+    expect(isOneShotRoutineCrons([ONCE_ROUTINE_CRON, "0 9 * * *"])).toBe(false);
+    expect(isOneShotRoutineCrons([])).toBe(false);
+  });
+});
+
+describe("nextCronDateAcross", () => {
+  it("returns the nearest next run across every recurring schedule", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross(["0 9 * * *", "0 15 * * *"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("ignores @once entries and schedules that fail to parse", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross([ONCE_ROUTINE_CRON, "0 9 * * *", "not-a-cron"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("returns null when nothing is a valid recurring schedule", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross([ONCE_ROUTINE_CRON], from, "UTC")).toBeNull();
+    expect(nextCronDateAcross(["not-a-cron"], from, "UTC")).toBeNull();
+  });
+});
+
+describe("hasMixedOneShotSchedule", () => {
+  it("flags @once combined with anything else", () => {
+    expect(hasMixedOneShotSchedule([ONCE_ROUTINE_CRON, "0 9 * * *"])).toBe(true);
+    expect(hasMixedOneShotSchedule(["0 9 * * *", ONCE_ROUTINE_CRON])).toBe(true);
+  });
+
+  it("does not flag a lone schedule of any kind", () => {
+    expect(hasMixedOneShotSchedule([ONCE_ROUTINE_CRON])).toBe(false);
+    expect(hasMixedOneShotSchedule(["0 9 * * *"])).toBe(false);
+    expect(hasMixedOneShotSchedule([])).toBe(false);
+  });
+
+  it("does not flag multiple recurring schedules", () => {
+    expect(hasMixedOneShotSchedule(["0 9 * * *", "0 15 * * *"])).toBe(false);
+  });
+});
+
+describe("nextCronDateAcrossStrict", () => {
+  it("returns the nearest next run across every recurring schedule", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcrossStrict(["0 9 * * *", "0 15 * * *"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("ignores @once entries", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcrossStrict([ONCE_ROUTINE_CRON, "0 9 * * *"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("throws on a malformed recurring cron even when another entry is valid", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(() => nextCronDateAcrossStrict(["0 9 * * *", "not-a-cron"], from, "UTC")).toThrow();
+  });
+
+  it("returns null when the array is empty or only @once", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcrossStrict([ONCE_ROUTINE_CRON], from, "UTC")).toBeNull();
+    expect(nextCronDateAcrossStrict([], from, "UTC")).toBeNull();
   });
 });

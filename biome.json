@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -21,7 +21,14 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/.claude",
+      "!**/.mimosa",
+      "!**/docs/brand",
+      "!**/apps/site/assets",
+      "!**/apps/site/original",
+      "!**/apps/site/public/assets",
+      "!**/apps/site/src/html",
+      "!**/packages/bot-templates"
     ]
   },
   "formatter": {

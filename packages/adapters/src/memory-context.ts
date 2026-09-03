@@ -1,4 +1,4 @@
-import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
+import type { AdapterContext, MemorySnapshot, MemoryStore } from "@sentrabot/adapter-kit";
 
 const MAX_AGENT_MEMORY_BYTES = 32 * 1024;
 

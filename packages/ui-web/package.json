@@ -1,5 +1,5 @@
 {
-  "name": "@rakazo/ui-web",
+  "name": "@sentrabot/ui-web",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@rakazo/ui-tokens": "workspace:*",
+    "@sentrabot/core": "workspace:*",
+    "@sentrabot/ui-tokens": "workspace:*",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.8",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
   }

@@ -11,8 +11,8 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
-} from "@rakazo/adapter-kit";
-import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+} from "@sentrabot/adapter-kit";
+import { canReleaseScreenLease, canTakeScreenLease } from "@sentrabot/core";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   applyPlaceholderAction,

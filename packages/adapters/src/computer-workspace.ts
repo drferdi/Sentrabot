@@ -7,9 +7,9 @@ import type {
   ComputerRef,
   PortableFile,
   SandboxProvider,
-} from "@rakazo/adapter-kit";
-import type { ComputerMode } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+} from "@sentrabot/adapter-kit";
+import type { ComputerMode } from "@sentrabot/contracts";
+import type { PrismaClient } from "@sentrabot/db";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { LocalAgentHomeStore } from "./home.js";
 
@@ -92,7 +92,7 @@ export async function checkpointComputerWorkspace(
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) {
     return home.revise(homeKey);
   }
-  const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));
+  const staging = await mkdtemp(path.join(tmpdir(), "sentrabot-workspace-"));
   try {
     for await (const file of sandbox.exportWorkspace(computer, context)) {
       await writePortableFile(staging, file);

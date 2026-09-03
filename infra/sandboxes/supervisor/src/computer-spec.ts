@@ -1,10 +1,24 @@
-export function computerImage() {
-  return process.env.RAKAZO_COMPUTER_IMAGE ?? "sentra-agent/computer:local";
+import { createHash } from "node:crypto";
+
+export const COMPUTER_IMAGE = process.env.SENTRABOT_COMPUTER_IMAGE ?? "sentrabot/computer:local";
+export const COMPUTER_UID = 1000;
+export const COMPUTER_GID = 1000;
+export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
+export const TEAM_SCREEN_LIMIT = 8;
+export const COMPUTER_CONTROL_PORT = 7070;
+export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+export type ScreenNetworkMode = "published" | "internal" | "isolated";
+
+export function resolveScreenNetworkMode(value: string | undefined): ScreenNetworkMode {
+  if (!value || value === "published") return "published";
+  if (value === "internal" || value === "isolated") return value;
+  throw new Error(`Unsupported SANDBOX_SCREEN_NETWORK value: ${value}`);
 }
 
-export const COMPUTER_IMAGE = computerImage();
-export const TEAM_SCREEN_LIMIT = 8;
-const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+export function hostComputerUser(uid = process.getuid?.(), gid = process.getgid?.()): string {
+  if (uid === undefined || gid === undefined || uid === 0) return COMPUTER_USER;
+  return `${uid}:${gid}`;
+}
 
 export function screenPorts(index: number) {
   if (index < 0 || index >= TEAM_SCREEN_LIMIT) {
@@ -32,6 +46,8 @@ export function computerPortBindings() {
     PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
     PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   }
+  // Control stays on the container network only (0.0.0.0 inside the container).
+  // Do not publish 7070 to the host.
   return { ExposedPorts, PortBindings };
 }
 
@@ -41,6 +57,8 @@ export interface ComputerCreateInput {
   botId: string;
   workspaceId: string;
   homePath: string;
+  user?: string;
+  controlToken?: string;
   networkMode?: string;
 }
 
@@ -62,39 +80,122 @@ export function containerCreateOptions(input: ComputerCreateInput) {
   return {
     Image: input.image,
     name: input.name,
+    User: input.user ?? COMPUTER_USER,
     Tty: true,
     Env: [
       "DISPLAY=:1",
-      "HOME=/home/rakazo",
-      "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+      "HOME=/home/sentrabot",
+      "PATH=/home/sentrabot/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NPM_CONFIG_PREFIX=/home/sentrabot/.local",
       "PIP_USER=1",
+      ...(input.controlToken ? [`SENTRABOT_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
     ],
     Labels: {
-      "rakazo.managed": "true",
-      "rakazo.botId": input.botId,
-      "rakazo.workspaceId": input.workspaceId,
+      "sentrabot.managed": "true",
+      "sentrabot.botId": input.botId,
+      "sentrabot.workspaceId": input.workspaceId,
     },
     ExposedPorts: ports.ExposedPorts,
     HostConfig: {
-      Binds: [`${input.homePath}:/home/rakazo`],
+      Binds: [`${input.homePath}:/home/sentrabot`],
       PortBindings: ports.PortBindings,
       ShmSize: 256 * 1024 * 1024,
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      PidsLimit: 2048,
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
     },
-    WorkingDir: "/home/rakazo",
+    WorkingDir: "/home/sentrabot",
   };
 }
 
-export function containerNameFor(botId: string) {
+export function sanitizeIdentifier(botId: string) {
   const safe = botId.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 40);
-  return `sentra-agent-bot-${safe || "box"}`;
+  return safe || "box";
+}
+
+export function containerNameFor(botId: string) {
+  return `sentrabot-bot-${sanitizeIdentifier(botId)}`;
+}
+
+export function computerNetworkNameFor(botId: string) {
+  // Keep distinct botIds on distinct networks even when sanitization collapses
+  // characters (e.g. "a/b" and "ab"). Do not change containerNameFor — that
+  // name must stay stable so an existing computer can resume.
+  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 32);
+  return `sentrabot-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
+}
+
+/** Current and prior network names used by this PR, for delete cleanup. */
+export function computerNetworkNamesForCleanup(botId: string) {
+  const safe = sanitizeIdentifier(botId);
+  const digest = createHash("sha256").update(botId).digest("hex");
+  return [
+    computerNetworkNameFor(botId),
+    `sentrabot-computer-${safe}`,
+    `sentrabot-computer-${safe.slice(0, 32)}-${digest.slice(0, 8)}`,
+  ];
+}
+
+/**
+ * Legacy unsalted network names can collide across botIds. Only remove such a
+ * network when no other bot's container is still attached.
+ */
+export function legacyNetworkOwnedSolelyBy(
+  botId: string,
+  attachedBotIds: Array<string | undefined>,
+): boolean {
+  return attachedBotIds.every((owner) => owner === botId);
 }
 
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
+}
+
+/**
+ * Decide which host:port clients (and readiness probes) should use.
+ *
+ * Per-bot NetworkMode isolation must not change this: a container always has a
+ * docker-internal IP on its network, but browsers cannot load that 172.x
+ * address. Compose modes that attach the supervisor/screen proxy to the bot
+ * network may return the container IP; host-run supervisors use the published
+ * loopback mapping.
+ */
+export function resolveScreenPublishTarget(input: {
+  screenNetwork: ScreenNetworkMode;
+  networkMode: string | null | undefined;
+  networks: Record<string, { IPAddress?: string } | undefined> | null | undefined;
+  hostPort: string | undefined;
+  containerPort: string;
+  screenHost?: string;
+}): { host: string; port: string } | undefined {
+  if (input.screenNetwork === "internal" || input.screenNetwork === "isolated") {
+    const address = input.networkMode ? input.networks?.[input.networkMode]?.IPAddress : undefined;
+    if (address) return { host: address, port: input.containerPort };
+    return undefined;
+  }
+  if (input.hostPort) return { host: input.screenHost ?? SCREEN_HOST, port: input.hostPort };
+  return undefined;
+}
+
+/**
+ * Resolve the in-container control service via its Docker network IP.
+ * Control is never host-published; the supervisor reaches 7070 on the
+ * container network while the process binds 0.0.0.0 inside the sandbox.
+ */
+export function resolveComputerControlEndpoint(input: {
+  token: string | undefined;
+  networkMode: string | null | undefined;
+  networks: Record<string, { IPAddress?: string } | undefined> | null | undefined;
+}): { url: string; token: string } | undefined {
+  if (!input.token) return undefined;
+  const address =
+    (input.networkMode ? input.networks?.[input.networkMode]?.IPAddress : undefined) ||
+    Object.values(input.networks ?? {}).find((network) => network?.IPAddress)?.IPAddress;
+  if (!address) return undefined;
+  return { url: `http://${address}:${COMPUTER_CONTROL_PORT}/v1/desktop`, token: input.token };
 }
 
 export function xdotoolCommand(input: SandboxInput): string[] {

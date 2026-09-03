@@ -1,4 +1,4 @@
-{$RAKAZO_HOST:app.example.com} {
+{$SENTRABOT_HOST:app.example.com} {
 	encode zstd gzip
 
 	handle /health {

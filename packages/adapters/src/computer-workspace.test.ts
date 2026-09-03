@@ -42,7 +42,7 @@ describe("provider-neutral computer workspace", () => {
   });
 
   it("restores a checkpoint into a replacement provider machine", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    const root = await mkdtemp(path.join(tmpdir(), "sentrabot-workspace-store-"));
     roots.push(root);
     const home = new LocalAgentHomeStore(root);
     const firstProvider = new FakeSandboxProvider();

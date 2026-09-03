@@ -1,4 +1,4 @@
-import type { AppBootstrap } from "@rakazo/contracts";
+import type { AppBootstrap } from "@sentrabot/contracts";
 import { initialBootstrapTarget } from "./bootstrap-target";
 import { markOnce } from "./performance";
 import { rpc } from "./rpc";
@@ -7,7 +7,7 @@ let primedBootstrap: { botId?: string; promise: Promise<AppBootstrap> } | null =
 
 const initialTarget = initialBootstrapTarget(
   window.location.pathname,
-  Boolean(window.rakazoDesktop),
+  Boolean(window.sentrabotDesktop),
 );
 if (initialTarget) {
   const { botId } = initialTarget;

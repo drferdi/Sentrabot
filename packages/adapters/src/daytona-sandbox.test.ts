@@ -25,7 +25,7 @@ describe("DaytonaSandboxProvider", () => {
     });
     expect(fixture.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        labels: { botId: "bot-a", rakazo: "computer" },
+        labels: { botId: "bot-a", sentrabot: "computer" },
         envVars: { VNC_RESOLUTION: "1280x800" },
       }),
       { timeout: 120 },
@@ -41,7 +41,7 @@ describe("DaytonaSandboxProvider", () => {
     ]);
     expect(fixture.executeCommand).toHaveBeenCalledWith(
       "'echo' 'hello'",
-      "/home/daytona/rakazo-home",
+      "/home/daytona/sentrabot-home",
       undefined,
       300,
     );
@@ -229,10 +229,10 @@ describe("DaytonaSandboxProvider", () => {
       const registryResult = screenRegistry(command);
       if (registryResult) return registryResult;
       if (command.includes("command -v Xvfb")) return { exitCode: 0, result: "" };
-      if (command.includes("RAKAZO_SCREEN_PASSWORD=")) {
+      if (command.includes("SENTRABOT_SCREEN_PASSWORD=")) {
         return {
           exitCode: 0,
-          result: "RAKAZO_SCREEN_PASSWORD=test-view-password\n",
+          result: "SENTRABOT_SCREEN_PASSWORD=test-view-password\n",
         };
       }
       if (command.includes("scrot") || command.includes("import")) {
@@ -424,7 +424,7 @@ function createScreenRegistryResponder() {
   return (command: string): { exitCode: number; result: string } | undefined => {
     const key = command.match(/slot="\$dir\/([a-f0-9]+)\.slot"/)?.[1];
     if (!key) return undefined;
-    if (command.includes("RAKAZO_SCREEN_INDEX=")) {
+    if (command.includes("SENTRABOT_SCREEN_INDEX=")) {
       let index = slots.get(key);
       if (index === undefined) {
         index = Array.from({ length: 8 }, (_, candidate) => candidate).find(
@@ -433,13 +433,13 @@ function createScreenRegistryResponder() {
         if (index === undefined) return { exitCode: 75, result: "" };
         slots.set(key, index);
       }
-      return { exitCode: 0, result: `RAKAZO_SCREEN_INDEX=${index}\n` };
+      return { exitCode: 0, result: `SENTRABOT_SCREEN_INDEX=${index}\n` };
     }
-    if (command.includes("RAKAZO_SCREEN_RELEASE=")) {
+    if (command.includes("SENTRABOT_SCREEN_RELEASE=")) {
       const index = slots.get(key);
-      if (index === undefined) return { exitCode: 0, result: "RAKAZO_SCREEN_RELEASE=missing\n" };
+      if (index === undefined) return { exitCode: 0, result: "SENTRABOT_SCREEN_RELEASE=missing\n" };
       slots.delete(key);
-      return { exitCode: 0, result: `RAKAZO_SCREEN_RELEASE=${index}\n` };
+      return { exitCode: 0, result: `SENTRABOT_SCREEN_RELEASE=${index}\n` };
     }
     return undefined;
   };

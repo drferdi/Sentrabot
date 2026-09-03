@@ -7,7 +7,7 @@ import type {
   ArtifactStore,
   NotificationMessage,
   NotificationProvider,
-} from "@rakazo/adapter-kit";
+} from "@sentrabot/adapter-kit";
 
 export class LocalArtifactStore implements ArtifactStore {
   constructor(private readonly root: string) {}

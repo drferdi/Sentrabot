@@ -1,4 +1,4 @@
-import type { RunStatus } from "@rakazo/contracts";
+import type { RunStatus } from "@sentrabot/contracts";
 
 export const ACTIVE_RUN_STATUSES = [
   "queued",

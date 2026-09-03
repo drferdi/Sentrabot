@@ -1,5 +1,5 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
-import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import type { AdapterContext } from "@sentrabot/adapter-kit";
+import { canReleaseScreenLease, canTakeScreenLease } from "@sentrabot/core";
 
 export const MULTI_SCREEN_UNAVAILABLE =
   "This computer provider does not support multiple screens. Desktop tools are already in use on the shared display. File and shell tools still work.";

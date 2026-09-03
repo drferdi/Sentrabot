@@ -1,5 +1,5 @@
 {
-  "name": "@rakazo/db",
+  "name": "@sentrabot/db",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,10 +18,11 @@
     "test": "vitest run --root ../.. packages/db/src"
   },
   "dependencies": {
-    "@rakazo/adapter-kit": "workspace:*",
+    "@sentrabot/adapter-kit": "workspace:*",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
-    "@rakazo/contracts": "workspace:*",
+    "@sentrabot/contracts": "workspace:*",
+    "@sentrabot/core": "workspace:*",
     "pg": "^8.16.3",
     "dotenv": "^17.2.1"
   },

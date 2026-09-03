@@ -83,17 +83,17 @@ describe("PostgresRealtimeFanout", () => {
     );
 
     expect(clients).toHaveLength(1);
-    await vi.waitFor(() => expect(clients[0]?.queries).toEqual(["LISTEN rakazo_events"]));
+    await vi.waitFor(() => expect(clients[0]?.queries).toEqual(["LISTEN sentrabot_events"]));
     received.forEach((subscriber) => {
       subscriber.mockClear();
     });
     clients[0]?.notify(
-      "rakazo_events",
+      "sentrabot_events",
       JSON.stringify({ topic: "thread:a", payload: '{"cursor":3}' }),
     );
     expect(received.filter((subscriber) => subscriber.mock.calls.length > 0)).toHaveLength(100);
 
-    clients[0]?.notify("rakazo_events", "malformed");
+    clients[0]?.notify("sentrabot_events", "malformed");
     clients[0]?.notify("another_channel", JSON.stringify({ topic: "thread:a", payload: "x" }));
     await Promise.all(unsubscribers.map((unsubscribe) => unsubscribe()));
     expect(clients[0]?.ended).toBe(false);
@@ -105,7 +105,7 @@ describe("PostgresRealtimeFanout", () => {
     const { realtime, published } = setup();
     await realtime.publish("thread:a", "wake");
     expect(published[0]?.sql).toBe("SELECT pg_notify($1, $2)");
-    expect(published[0]?.values[0]).toBe("rakazo_events");
+    expect(published[0]?.values[0]).toBe("sentrabot_events");
     expect(JSON.parse(String(published[0]?.values[1] ?? "{}"))).toEqual({
       topic: "thread:a",
       payload: "wake",
@@ -126,7 +126,7 @@ describe("PostgresRealtimeFanout", () => {
     expect(received).toHaveBeenCalledWith("");
     received.mockClear();
     clients[1]?.notify(
-      "rakazo_events",
+      "sentrabot_events",
       JSON.stringify({ topic: "thread:a", payload: "after-reconnect" }),
     );
     expect(received).toHaveBeenCalledWith("after-reconnect");
@@ -156,7 +156,7 @@ describe("PostgresRealtimeFanout", () => {
     const unsubscribe = await realtime.subscribe("thread:a", healthy);
     await Promise.resolve();
     clients[0]?.notify(
-      "rakazo_events",
+      "sentrabot_events",
       JSON.stringify({ topic: "thread:a", payload: "still-delivered" }),
     );
     expect(healthy).toHaveBeenCalledWith("still-delivered");

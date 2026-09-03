@@ -2,7 +2,7 @@
 
 ## Reporting vulnerabilities
 
-Email **security@rakazo.com** only. Do not open public GitHub issues for security bugs.
+Email **security@sentrabot.com** only. Do not open public GitHub issues for security bugs.
 
 Please include:
 
@@ -14,12 +14,12 @@ We will acknowledge your report and work on a fix. Please do not file a public i
 
 ## Other contact
 
-- General support: **support@rakazo.com**
-- Maintainer: **elie@rakazo.com**
+- General support: **support@sentrabot.com**
+- Maintainer: **elie@sentrabot.com**
 
 ## Scope
 
-This policy covers the Sentra Agent self-hosted product in **this repository**.
+This policy covers the Sentra Bot self-hosted product in **this repository**.
 
 Out of scope:
 

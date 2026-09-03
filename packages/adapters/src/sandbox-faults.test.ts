@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
+import type { PortableFile, SandboxProvider } from "@sentrabot/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
@@ -34,7 +34,7 @@ describe.each([
   [
     "desktop",
     async () => {
-      const root = await mkdtemp(path.join(tmpdir(), "rakazo-sandbox-faults-"));
+      const root = await mkdtemp(path.join(tmpdir(), "sentrabot-sandbox-faults-"));
       temporaryRoots.push(root);
       return new DesktopSandboxProvider({ root: await realpath(root) });
     },
@@ -182,7 +182,10 @@ describe.each([
       "injected exportWorkspace failure",
     );
     const exported = await collect(faulted.exportWorkspace(computer, context));
-    expect(exported).toEqual([file]);
+    // Windows cannot persist the executable bit (libuv st_mode); see docs/architecture.md, trusted host execution.
+    expect(exported).toEqual([
+      losesExecutableBit(provider) ? { ...file, executable: false } : file,
+    ]);
   });
 });
 
@@ -220,18 +223,25 @@ describe("portable workspace transfer", () => {
         await target.importWorkspace(targetComputer, portableFiles(exported), context);
 
         expect(await target.readFile(targetComputer, "bin/tool", context)).toEqual(binary);
+        // Windows cannot persist the executable bit (libuv st_mode); see docs/architecture.md, trusted host execution.
         expect(await target.listFiles(targetComputer, "bin", context)).toEqual([
           {
             path: "bin/tool",
             kind: "file",
             size: binary.byteLength,
-            executable: true,
+            ...(losesExecutableBit(source) || losesExecutableBit(target)
+              ? {}
+              : { executable: true }),
           },
         ]);
       }
     }
   });
 });
+
+function losesExecutableBit(provider: SandboxProvider) {
+  return process.platform === "win32" && provider instanceof DesktopSandboxProvider;
+}
 
 type FaultableMethod = "provision" | "prepare" | "importWorkspace" | "exportWorkspace";
 
@@ -264,7 +274,7 @@ function faultOnce(provider: SandboxProvider, methods: FaultableMethod[]): Sandb
 }
 
 async function providerSet(label: string): Promise<Array<[string, SandboxProvider]>> {
-  const root = await mkdtemp(path.join(tmpdir(), `rakazo-sandbox-transfer-${label}-`));
+  const root = await mkdtemp(path.join(tmpdir(), `sentrabot-sandbox-transfer-${label}-`));
   temporaryRoots.push(root);
   return [
     ["fake", new FakeSandboxProvider()],

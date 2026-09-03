@@ -1,7 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import type { AppContract } from "@rakazo/contracts";
+import type { AppContract } from "@sentrabot/contracts";
 
 const link = new RPCLink({
   url: () =>

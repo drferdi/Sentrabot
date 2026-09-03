@@ -12,9 +12,9 @@ import {
   _electron as electron,
   type Page,
 } from "@playwright/test";
-import { abortableDelay } from "@rakazo/core";
-import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { createThreadMessage, type PrismaClient } from "@rakazo/db";
+import { abortableDelay } from "@sentrabot/core";
+import { loadRootEnv } from "@sentrabot/core/node/load-root-env";
+import { createThreadMessage, type PrismaClient } from "@sentrabot/db";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import {
   type NumericSummary,
@@ -48,7 +48,7 @@ if (webPort === apiPort) {
 const webOrigin = `http://127.0.0.1:${webPort}`;
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const reportDirectory = path.join(root, ".context/performance");
-const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "rakazo-desktop-performance-"));
+const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "sentrabot-desktop-performance-"));
 
 const container = await new PostgreSqlContainer("postgres:16-alpine").start();
 let preview: ChildProcess | undefined;
@@ -162,19 +162,21 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
     OPENROUTER_API_KEY: "",
     E2B_API_KEY: "",
     DAYTONA_API_KEY: "",
-    BETTER_AUTH_SECRET: "rakazo-benchmark-auth-secret-over-32-characters",
-    ENCRYPTION_KEY: "rakazo-benchmark-encryption-key-over-32-characters",
+    BETTER_AUTH_SECRET: "sentrabot-benchmark-auth-secret-over-32-characters",
+    ENCRYPTION_KEY: "sentrabot-benchmark-encryption-key-over-32-characters",
+    SANDBOX_SUPERVISOR_TOKEN: "sentrabot-benchmark-supervisor-token-over-32-characters",
+    SCREEN_PROXY_SECRET: "sentrabot-benchmark-screen-proxy-secret-over-32-characters",
     BETTER_AUTH_URL: webOrigin,
     WEB_ORIGIN: webOrigin,
     API_PORT: String(apiPort),
     API_URL: apiOrigin,
     API_PROXY_TARGET: apiOrigin,
     WEB_PORT: String(webPort),
-    RAKAZO_HOST: "127.0.0.1",
-    RAKAZO_WEB_URL: webOrigin,
-    RAKAZO_DISABLE_BUNDLED_RENDERER: remoteRenderer ? "1" : "0",
-    RAKAZO_DISABLE_WARM_WINDOW: disableWarmWindow ? "1" : "0",
-    RAKAZO_PERFORMANCE_ASSET_DELAY_MS: String(assetDelayMs),
+    SENTRABOT_HOST: "127.0.0.1",
+    SENTRABOT_WEB_URL: webOrigin,
+    SENTRABOT_DISABLE_BUNDLED_RENDERER: remoteRenderer ? "1" : "0",
+    SENTRABOT_DISABLE_WARM_WINDOW: disableWarmWindow ? "1" : "0",
+    SENTRABOT_PERFORMANCE_ASSET_DELAY_MS: String(assetDelayMs),
     DATA_DIR: path.join(temporaryRoot, "data"),
     SIGNUPS_ENABLED: "true",
     SIGNUP_ALLOWLIST: "",
@@ -185,12 +187,12 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
 }
 
 function buildProductionArtifacts(env: NodeJS.ProcessEnv) {
-  run("pnpm", ["--filter", "@rakazo/desktop", "pack:dir"], env);
+  run("pnpm", ["--filter", "@sentrabot/desktop", "pack:dir"], env);
 }
 
 function migrateDatabase(env: NodeJS.ProcessEnv) {
-  run("pnpm", ["--filter", "@rakazo/db", "generate"], env);
-  run("pnpm", ["--filter", "@rakazo/db", "exec", "prisma", "migrate", "deploy"], env);
+  run("pnpm", ["--filter", "@sentrabot/db", "generate"], env);
+  run("pnpm", ["--filter", "@sentrabot/db", "exec", "prisma", "migrate", "deploy"], env);
 }
 
 function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
@@ -202,7 +204,7 @@ function startPreview(env: NodeJS.ProcessEnv) {
     "pnpm",
     [
       "--filter",
-      "@rakazo/web",
+      "@sentrabot/web",
       "exec",
       "vite",
       "preview",
@@ -218,9 +220,9 @@ function startPreview(env: NodeJS.ProcessEnv) {
 
 async function packagedExecutable() {
   const out = path.join(desktopRoot, "out");
-  const candidates = process.platform === "darwin" ? await findNamed(out, "Sentra Agent.app") : [];
+  const candidates = process.platform === "darwin" ? await findNamed(out, "Sentra Bot.app") : [];
   if (process.platform === "darwin" && candidates[0]) {
-    return path.join(candidates[0], "Contents/MacOS/Sentra Agent");
+    return path.join(candidates[0], "Contents/MacOS/Sentra Bot");
   }
   const desktopRequire = createRequire(path.join(desktopRoot, "package.json"));
   return desktopRequire("electron") as string;
@@ -257,7 +259,7 @@ async function prepareAuthenticatedProfile(benchmark: BenchmarkContext, profile:
     const stamp = Date.now();
     await page.goto(`${webOrigin}/sign-up`);
     await page.getByPlaceholder("Your name").fill("Benchmark User");
-    await page.getByPlaceholder("Your email address").fill(`benchmark-${stamp}@rakazo.test`);
+    await page.getByPlaceholder("Your email address").fill(`benchmark-${stamp}@sentrabot.test`);
     await page.getByPlaceholder("Password").fill("password12");
     await page.getByRole("button", { name: "Create account" }).click();
     await page
@@ -287,7 +289,7 @@ async function prepareAuthenticatedProfile(benchmark: BenchmarkContext, profile:
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByText("A bit of everything", { exact: true }).click();
       await page.getByText("Clear and tight", { exact: true }).click();
-      await page.getByRole("button", { name: "Open Sentra Agent" }).click();
+      await page.getByRole("button", { name: "Open Sentra Bot" }).click();
     }
     await waitForShell(page);
   } finally {
@@ -354,8 +356,8 @@ async function launchDesktop(
     executablePath: benchmark.executablePath,
     env: {
       ...benchmark.env,
-      RAKAZO_PERFORMANCE_USER_DATA: profile,
-      RAKAZO_PERFORMANCE_CLEAR_CACHE: clearCache ? "1" : "0",
+      SENTRABOT_PERFORMANCE_USER_DATA: profile,
+      SENTRABOT_PERFORMANCE_CLEAR_CACHE: clearCache ? "1" : "0",
     },
   });
   const page = await app.firstWindow();
@@ -520,8 +522,9 @@ async function measureInteractions(app: ElectronApplication, page: Page) {
     const target = document.querySelector<HTMLInputElement>('input[placeholder^="Message "]');
     if (!target) throw new Error("Composer is missing");
     const samples: number[] = [];
-    (window as typeof window & { __rakazoKeyPaintSamples?: number[] }).__rakazoKeyPaintSamples =
-      samples;
+    (
+      window as typeof window & { __sentrabotKeyPaintSamples?: number[] }
+    ).__sentrabotKeyPaintSamples = samples;
     target.addEventListener("keydown", () => {
       const started = performance.now();
       requestAnimationFrame(() => samples.push(performance.now() - started));
@@ -530,14 +533,14 @@ async function measureInteractions(app: ElectronApplication, page: Page) {
   await page.keyboard.type("a".repeat(characterCount), { delay: 16 });
   await page.waitForFunction(
     (count) =>
-      ((window as typeof window & { __rakazoKeyPaintSamples?: number[] }).__rakazoKeyPaintSamples
-        ?.length ?? 0) >= count,
+      ((window as typeof window & { __sentrabotKeyPaintSamples?: number[] })
+        .__sentrabotKeyPaintSamples?.length ?? 0) >= count,
     characterCount,
   );
   const keyPaintMs = await page.evaluate(
     () =>
-      (window as typeof window & { __rakazoKeyPaintSamples?: number[] }).__rakazoKeyPaintSamples ??
-      [],
+      (window as typeof window & { __sentrabotKeyPaintSamples?: number[] })
+        .__sentrabotKeyPaintSamples ?? [],
   );
   const typingAfter = await cdpMetrics(session);
 
@@ -753,7 +756,7 @@ function environmentFingerprint(versions: { electron?: string; chrome?: string }
 
 async function measureBundles() {
   const web = await directorySize(path.join(webRoot, "dist"));
-  const applications = await findNamed(path.join(desktopRoot, "out"), "Sentra Agent.app");
+  const applications = await findNamed(path.join(desktopRoot, "out"), "Sentra Bot.app");
   const desktop = applications[0] ? await directorySize(applications[0]) : null;
   return { web, desktop };
 }
@@ -817,7 +820,7 @@ function roundedSummary(values: number[]): NumericSummary {
 
 function renderMarkdown(report: PerformanceReport) {
   const summary = report.summary;
-  return `# Sentra Agent desktop performance — ${report.label}
+  return `# Sentra Bot desktop performance — ${report.label}
 
 - Commit: \`${report.environment.gitSha.slice(0, 12)}\`
 - Platform: ${report.environment.platform}/${report.environment.arch}

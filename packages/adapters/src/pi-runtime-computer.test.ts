@@ -1,4 +1,4 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { ConnectorTool } from "@sentrabot/adapter-kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
@@ -50,6 +50,16 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
       throw new Error("the fake agent must not call a provider");
     },
   }),
+}));
+
+vi.mock("./pi-local-provider.js", () => ({
+  registerLocalProvider: (models: unknown) => models,
+}));
+
+vi.mock("./pi-openai-compatible-provider.js", () => ({
+  OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
+  registerOpenAiCompatibleCatalog: (models: unknown) => models,
+  registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
 import { PiAgentRuntime, pruneComputerScreenshotContext } from "./pi-runtime.js";

@@ -3,9 +3,9 @@ import type {
   ArtifactStore,
   ComputerRef,
   SandboxProvider,
-} from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+} from "@sentrabot/adapter-kit";
+import type { MessageBlock } from "@sentrabot/contracts";
+import type { PrismaClient } from "@sentrabot/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,

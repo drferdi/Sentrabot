@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ThreadSnapshot } from "@rakazo/contracts";
+import type { ThreadSnapshot } from "@sentrabot/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -18,7 +18,7 @@ describeSearch("workspace search", () => {
   let app: App;
   let stop: () => Promise<void>;
   const stamp = Date.now();
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-search-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-search-"));
 
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
@@ -37,7 +37,7 @@ describeSearch("workspace search", () => {
   });
 
   it("finds bots, messages, files, links, and routines within the workspace", async () => {
-    const cookie = await signup(app, `search-${stamp}@rakazo.test`, "Search User");
+    const cookie = await signup(app, `search-${stamp}@sentrabot.test`, "Search User");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Finder",
       title: "Finder",
@@ -59,7 +59,7 @@ describeSearch("workspace search", () => {
       botId: bot.id,
       name: "Weekly fixture",
       prompt: "check the fixture",
-      cron: "0 9 * * 1",
+      crons: ["0 9 * * 1"],
       timezone: "UTC",
       active: true,
       notify: true,
@@ -78,7 +78,7 @@ describeSearch("workspace search", () => {
   });
 
   it("returns no hits for another workspace", async () => {
-    const ownerCookie = await signup(app, `search-owner-${stamp}@rakazo.test`, "Owner");
+    const ownerCookie = await signup(app, `search-owner-${stamp}@sentrabot.test`, "Owner");
     const ownerBot = await rpc<{ id: string }>(app, ownerCookie, "bots/create", {
       name: "OwnerOnly",
       title: "OwnerOnly",
@@ -88,11 +88,73 @@ describeSearch("workspace search", () => {
     });
     await sendAndWait(app, ownerCookie, ownerBot.id, { text: "owner-only-token-xyz" });
 
-    const intruderCookie = await signup(app, `search-intruder-${stamp}@rakazo.test`, "Intruder");
+    const intruderCookie = await signup(app, `search-intruder-${stamp}@sentrabot.test`, "Intruder");
     const hits = await rpc<{ hits: unknown[] }>(app, intruderCookie, "search/query", {
       q: "owner-only-token-xyz",
     });
     expect(hits.hits).toEqual([]);
+  });
+
+  it("finds group conversations, messages, and files", async () => {
+    const cookie = await signup(app, `search-group-${stamp}@sentrabot.test`, "Group Search User");
+    const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Alpha",
+      title: "Alpha",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botB = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Beta",
+      title: "Beta",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
+      name: "Squad",
+      botIds: [botA.id, botB.id],
+    });
+    const groupToken = `squad-search-token-${stamp}`;
+    await rpc(app, cookie, "threads/send", { groupId: group.id, text: groupToken });
+    const artifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+      groupId: group.id,
+      name: `squad-notes-${stamp}.txt`,
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("group fixture").toString("base64"),
+    });
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "see attachment",
+      artifactIds: [artifact.id],
+    });
+
+    const squadHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; botId?: string }>;
+    }>(app, cookie, "search/query", { q: "Squad" });
+    expect(
+      squadHits.hits.some((hit) => hit.kind === "conversation" && hit.groupId === group.id),
+    ).toBe(true);
+
+    const messageHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; botId?: string; messageId?: string }>;
+    }>(app, cookie, "search/query", { q: groupToken });
+    const groupMessage = messageHits.hits.find((hit) => hit.kind === "message");
+    expect(groupMessage?.groupId).toBe(group.id);
+    expect(groupMessage?.botId).toBeUndefined();
+    expect(groupMessage?.messageId).toBeDefined();
+    const page = await rpc<{ messages: Array<{ id: string }> }>(app, cookie, "threads/messages", {
+      groupId: group.id,
+      around: { messageId: groupMessage!.messageId! },
+    });
+    expect(page.messages.some((message) => message.id === groupMessage!.messageId)).toBe(true);
+
+    const fileHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; artifactId?: string }>;
+    }>(app, cookie, "search/query", { q: `squad-notes-${stamp}` });
+    const groupFile = fileHits.hits.find((hit) => hit.kind === "file");
+    expect(groupFile?.groupId).toBe(group.id);
+    expect(groupFile?.artifactId).toBe(artifact.id);
   });
 });
 

@@ -3,9 +3,9 @@ import {
   computerSleepJob,
   type JobPublisher,
   type SandboxProvider,
-} from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+} from "@sentrabot/adapter-kit";
+import { ACTIVE_RUN_STATUSES } from "@sentrabot/core";
+import type { PrismaClient, ThreadEvents } from "@sentrabot/db";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
@@ -135,6 +135,7 @@ export async function sleepComputerIfIdle(
       controlLeaseId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
+      controlRunId: null,
     },
   });
   const bots = await deps.prisma.bot.findMany({

@@ -24,8 +24,8 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
-} from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+} from "@sentrabot/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@sentrabot/core";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -131,7 +131,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
     const sandbox = await this.client.create(
       {
-        labels: { botId: request.botId, rakazo: "computer" },
+        labels: { botId: request.botId, sentrabot: "computer" },
         envVars: { VNC_RESOLUTION: "1280x800" },
         autoStopInterval: 0,
         autoDeleteInterval: -1,
@@ -582,7 +582,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (cached) return cached;
     const home = (await sandbox.getUserHomeDir()) ?? (await sandbox.getWorkDir());
     if (!home) throw new Error("Daytona did not report a sandbox home directory");
-    const root = path.posix.join(home, "rakazo-home");
+    const root = path.posix.join(home, "sentrabot-home");
     if (this.boxes.get(sandbox.id) === sandbox) this.workspaceRoots.set(sandbox.id, root);
     return root;
   }
@@ -832,7 +832,7 @@ function daytonaCwd(root: string, cwd: string | undefined): string {
     !cwd ||
     cwd === "." ||
     cwd === "/" ||
-    cwd === "/home/rakazo" ||
+    cwd === "/home/sentrabot" ||
     cwd === "/home/user" ||
     cwd === "/home/daytona" ||
     cwd === root
@@ -903,7 +903,7 @@ async function launchDaytonaApplication(
     String.raw`export DISPLAY=\${DISPLAY:-:99}`,
     `for app in ${candidates.map(shellQuote).join(" ")}; do`,
     '  if command -v "$app" >/dev/null 2>&1; then',
-    `    nohup "$app"${uri ? ` ${shellQuote(uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
+    `    nohup "$app"${uri ? ` ${shellQuote(uri)}` : ""} >/tmp/sentrabot-app.log 2>&1 &`,
     "    exit 0",
     "  fi",
     "done",

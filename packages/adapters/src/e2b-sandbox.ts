@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { Sandbox, TimeoutError } from "@e2b/desktop";
+import { type CommandResult, Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
@@ -16,8 +16,8 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
-} from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+} from "@sentrabot/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@sentrabot/core";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
@@ -51,7 +51,7 @@ import {
   screenControlKey,
 } from "./extra-displays.js";
 
-const E2B_WORKSPACE = "/home/user/rakazo-home";
+const E2B_WORKSPACE = "/home/user/sentrabot-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
 
 export interface E2BSandboxSdk {
@@ -64,25 +64,89 @@ export function e2bCreateOptions(botId: string, apiKey: string) {
   return {
     apiKey,
     timeoutMs: sandboxIdleMs(),
-    metadata: { botId, rakazo: "computer" },
+    metadata: { botId, sentrabot: "computer" },
     resolution: [1280, 800] as [number, number],
     lifecycle: { onTimeout: "pause" as const, autoResume: false },
   };
 }
 
+// A sandbox that has expired stops resolving as a host, so reaching it fails at the socket
+// rather than with a 404. undici reports every one of those as a bare "fetch failed" and
+// hides the errno on the cause chain. Used only by provision reconnect: replaceComputer must
+// not treat these as permanent, or an update-mode checkpoint blip destroys the old box
+// without committing workspace changes that exist only there.
+const SANDBOX_UNREACHABLE_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+export function isUnreachableTransportError(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && SANDBOX_UNREACHABLE_CODES.has(code)) return true;
+    if (current.message === "fetch failed") return true;
+  }
+  return false;
+}
+
+/**
+ * True when the sandbox is permanently gone (404 / killed / not found). Used by
+ * replaceComputer to decide whether to swallow checkpoint/destroy failures.
+ * Transient transport errors stay recoverable so update/reset can abort without
+ * discarding an uncommitted workspace on a still-reachable box.
+ */
 export function isUnrecoverableSandboxError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(
-    message,
-  );
+  if (LEGACY_GONE_MESSAGE.test(errorMessage(error))) return true;
+  return isSandboxGoneError(error);
+}
+
+// How the E2B SDK words a sandbox that no longer exists. It does not always say "not found":
+// an expired sandbox surfaces as a TimeoutError about the *sandbox* timeout (502 / Unavailable
+// from envd), which used to read as a live sandbox and left every later call throwing forever.
+const SANDBOX_GONE_MESSAGE =
+  /probably not running anymore|likely due to sandbox timeout|killed or reached its end of life|sandbox [^:]{0,60}not found|sandbox [^:]{0,60}does not exist/i;
+// The same words from a live sandbox: a missing binary or a missing file inside it.
+const SHELL_MISSING_TARGET = /command not found|no such file|^path .* not found/i;
+const LEGACY_GONE_MESSAGE =
+  /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i;
+
+/**
+ * Narrower than isUnrecoverableSandboxError: the provider itself said this sandbox is gone.
+ * A missing binary or a missing file inside a live sandbox is not proof of death, so callers
+ * that persist "the sandbox is gone" must use this one.
+ */
+export function isSandboxGoneError(error: unknown): boolean {
+  const message = errorMessage(error);
+  if (SHELL_MISSING_TARGET.test(message)) return false;
+  if (SANDBOX_GONE_MESSAGE.test(message)) return true;
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (current.name === "SandboxNotFoundError") return true;
+  }
+  return false;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
 
-export async function openDesktopBrowser(desktop: {
+type E2BDesktopBrowser = {
   launch: (application: string, uri?: string) => Promise<void>;
   open: (fileOrUrl: string) => Promise<void>;
-}): Promise<void> {
+};
+
+type E2BDesktopCommands = {
+  run: (cmd: string) => Promise<{ exitCode?: number }>;
+};
+
+export async function openDesktopBrowser(desktop: E2BDesktopBrowser): Promise<void> {
   for (const app of E2B_BROWSER_APPS) {
     try {
       await desktop.launch(app);
@@ -92,6 +156,25 @@ export async function openDesktopBrowser(desktop: {
     }
   }
   await desktop.open("https://www.google.com").catch(() => undefined);
+}
+
+/** Open an http(s) URL via a named browser — avoids the broken default-browser association. */
+export async function openDesktopUrl(
+  desktop: E2BDesktopBrowser & { commands: E2BDesktopCommands },
+  url: string,
+): Promise<void> {
+  for (const app of E2B_BROWSER_APPS) {
+    // Prefer a foreground gtk-launch so missing desktop entries / launch failures reject
+    // and we can try the next browser. desktop.launch backgrounds and always resolves.
+    const launched = await desktop.commands
+      .run(`gtk-launch ${shellQuote(app)} ${shellQuote(url)}`)
+      .then(
+        (result) => (result.exitCode ?? 0) === 0,
+        () => false,
+      );
+    if (launched) return;
+  }
+  await desktop.open(url);
 }
 
 export class E2BSandboxProvider implements SandboxProvider {
@@ -127,11 +210,18 @@ export class E2BSandboxProvider implements SandboxProvider {
     const existing = this.boxes.get(id);
     if (existing) {
       const lastTouched = this.lastTouchedAt.get(id) ?? 0;
-      if (Date.now() - lastTouched >= 60_000) {
-        await existing.setTimeout(sandboxIdleMs()).catch(() => undefined);
+      if (Date.now() - lastTouched < 60_000) return existing;
+      // A cached handle to a sandbox E2B already killed keeps throwing on every call, and the
+      // process never reconnects. The keepalive is the cheapest place to notice and drop it.
+      const gone = await existing.setTimeout(sandboxIdleMs()).then(
+        () => false,
+        (error: unknown) => isSandboxGoneError(error),
+      );
+      if (!gone) {
         this.lastTouchedAt.set(id, Date.now());
+        return existing;
       }
-      return existing;
+      this.forget(id);
     }
     const connected = await this.sdk.connect(id, {
       apiKey: this.apiKey,
@@ -202,7 +292,10 @@ export class E2BSandboxProvider implements SandboxProvider {
         };
       } catch (error) {
         this.boxes.delete(request.providerRef);
-        if (!isUnrecoverableSandboxError(error)) throw error;
+        // Permanent gone (404/killed) or unreachable transport: boot fresh. Other errors rethrow.
+        if (!isUnrecoverableSandboxError(error) && !isUnreachableTransportError(error)) {
+          throw error;
+        }
       }
     }
     const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
@@ -221,6 +314,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     const desktop = await this.box(computer);
     if (computer.fresh) await desktop.files.makeDir(E2B_WORKSPACE);
     const profilesChanged = await configurePortableBrowserProfiles(desktop);
+    await configureDefaultWebBrowser(desktop);
     if (!computer.fresh && profilesChanged) await openDesktopBrowser(desktop);
   }
 
@@ -535,7 +629,16 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async keepAlive(computer: ComputerRef): Promise<void> {
     const desktop = await this.box(computer);
-    await desktop.setTimeout(sandboxIdleMs()).catch(() => undefined);
+    try {
+      await desktop.setTimeout(sandboxIdleMs());
+    } catch (error) {
+      // Heartbeats refresh lastTouchedAt; if we swallow a gone error here, box() never
+      // reaches its 60s probe and keeps handing back the dead cached handle.
+      if (isSandboxGoneError(error)) {
+        this.forget(desktop.sandboxId);
+        return;
+      }
+    }
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
   }
 
@@ -587,8 +690,37 @@ export class E2BSandboxProvider implements SandboxProvider {
     }
   }
 
+  /** Apply the deployment timeout (SDK default is 60s) and return failed results instead of throwing. */
+  private async runSetupCommand(
+    desktop: Sandbox,
+    command: string,
+    signal?: AbortSignal,
+  ): Promise<CommandResult> {
+    try {
+      return await desktop.commands.run(command, {
+        ...(signal ? { signal } : {}),
+        timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
+      });
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        return {
+          exitCode: 124,
+          stdout: "",
+          stderr: error.message,
+          error: error.message,
+        };
+      }
+      const result = (error as { result?: CommandResult }).result;
+      if (result) return result;
+      throw error;
+    }
+  }
+
   private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
-    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId));
+    const allocation = await this.runSetupCommand(
+      desktop,
+      allocateExtraDisplayCommand(screenKey, leaseId),
+    );
     if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
     const index = parseAllocatedExtraDisplay(allocation.stdout);
     return extraDisplayLayout(index, desktop.display ?? ":0");
@@ -600,7 +732,8 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<string> {
     if (layout.isPrimary) throw new Error("primary display does not use an extra view password");
-    const result = await desktop.commands.run(
+    const result = await this.runSetupCommand(
+      desktop,
       ensureExtraDisplayCommand(
         layout,
         {
@@ -609,7 +742,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         },
         randomBytes(9).toString("base64url"),
       ),
-      { signal: context.signal },
+      context.signal,
     );
     if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
     return parseExtraDisplayViewPassword(result.stdout);
@@ -626,22 +759,31 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (existing?.controlToken === controlToken) return existing.password;
     const password = randomBytes(6).toString("base64url");
     if (layout.isPrimary) {
-      const passwordFile = "/tmp/rakazo-control.vncpass";
-      const tokenFile = "/tmp/rakazo-control.token";
+      const passwordFile = "/tmp/sentrabot-control.vncpass";
+      const tokenFile = "/tmp/sentrabot-control.token";
+      const vncPort = layout.controlVncPort;
+      const proxyPort = layout.controlPort;
       const command = [
         controlStreamStopCommand(),
+        // Old x11vnc may outlive pkill briefly; do not store a new password until the VNC port is free.
+        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' || break; sleep 0.1; done`,
+        `if netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
         `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
         `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
-        `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${layout.controlVncPort} -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
+        `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${vncPort} -rfbauth ${passwordFile} 2>/tmp/sentrabot-control-x11vnc.log`,
+        // Require the new x11vnc itself — proxy listen alone can pass with a leftover server.
+        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' && break; sleep 0.1; done`,
+        `if ! netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
         "cd /opt/noVNC/utils",
-        `(nohup ./novnc_proxy --vnc localhost:${layout.controlVncPort} --listen ${layout.controlPort} --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)`,
-        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${layout.controlPort} ' && exit 0; sleep 0.1; done`,
+        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC >/tmp/sentrabot-control-novnc.log 2>&1 &)`,
+        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${proxyPort} ' && exit 0; sleep 0.1; done`,
         "exit 1",
       ].join(" && ");
-      const result = await desktop.commands.run(command);
+      const result = await this.runSetupCommand(desktop, command);
       if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
     } else {
-      const result = await desktop.commands.run(
+      const result = await this.runSetupCommand(
+        desktop,
         extraDisplayControlStartCommand(layout, controlToken, password),
       );
       if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
@@ -675,14 +817,18 @@ async function settleForTeardown(pending: Promise<void> | undefined): Promise<vo
 }
 
 function controlStreamStopCommand(controlToken?: string) {
+  // Anchor to the x11vnc binary (path-prefixed OK). Do not use an unanchored
+  // `x11vnc.*` pattern — E2B embeds the full script in the runner argv, so that
+  // would pkill the runner itself.
   const stop = [
-    "pkill -f '^x11vnc .* -rfbport 5901' || true",
+    "pkill -f '(^|/)x11vnc .* -rfbport 5901' || true",
     "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true",
-    "rm -f /tmp/rakazo-control.vncpass",
-    "rm -f /tmp/rakazo-control.token",
+    "pkill -f 'novnc_proxy.*--listen 6081' || true",
+    "rm -f /tmp/sentrabot-control.vncpass",
+    "rm -f /tmp/sentrabot-control.token",
   ].join("; ");
   if (!controlToken) return stop;
-  return `[ -f /tmp/rakazo-control.token ] && [ "$(cat /tmp/rakazo-control.token)" != ${shellQuote(controlToken)} ] || { ${stop}; }`;
+  return `[ -f /tmp/sentrabot-control.token ] && [ "$(cat /tmp/sentrabot-control.token)" != ${shellQuote(controlToken)} ] || { ${stop}; }`;
 }
 
 async function observeE2BDesktop(
@@ -762,6 +908,20 @@ async function configurePortableBrowserProfiles(desktop: Sandbox): Promise<boole
   return true;
 }
 
+/** Point xdg-open / XFCE exo-open at Chrome. Lives outside the checkpointed workspace. */
+async function configureDefaultWebBrowser(desktop: Sandbox): Promise<void> {
+  await desktop.commands
+    .run(
+      [
+        "command -v google-chrome >/dev/null 2>&1 || exit 0",
+        'mkdir -p "$HOME/.config/xfce4"',
+        "printf 'WebBrowser=google-chrome\\n' > \"$HOME/.config/xfce4/helpers.rc\"",
+        "xdg-settings set default-web-browser google-chrome.desktop",
+      ].join(" && "),
+    )
+    .catch(() => undefined);
+}
+
 async function stopDesktopBrowsers(desktop: Sandbox): Promise<void> {
   await desktop.commands.run(PORTABLE_BROWSER_STOP_COMMAND).catch(() => undefined);
 }
@@ -799,10 +959,11 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
     return;
   }
   if (action.kind === "open") {
-    const value = /^https?:\/\//i.test(action.path)
-      ? action.path
-      : workspacePath(E2B_WORKSPACE, action.path);
-    await desktop.open(value);
+    if (/^https?:\/\//i.test(action.path)) {
+      await openDesktopUrl(desktop, action.path);
+      return;
+    }
+    await desktop.open(workspacePath(E2B_WORKSPACE, action.path));
     return;
   }
   await desktop.launch(action.application, action.uri);
@@ -852,7 +1013,7 @@ function e2bCwd(cwd: string | undefined): string {
     !cwd ||
     cwd === "." ||
     cwd === "/" ||
-    cwd === "/home/rakazo" ||
+    cwd === "/home/sentrabot" ||
     cwd === "/home/user" ||
     cwd === E2B_WORKSPACE
   ) {
@@ -860,8 +1021,8 @@ function e2bCwd(cwd: string | undefined): string {
   }
   const relative = cwd.startsWith(`${E2B_WORKSPACE}/`)
     ? cwd.slice(E2B_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
+    : cwd.startsWith("/home/sentrabot/")
+      ? cwd.slice("/home/sentrabot/".length)
       : cwd;
   return workspacePath(E2B_WORKSPACE, relative);
 }

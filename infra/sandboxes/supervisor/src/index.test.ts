@@ -1,26 +1,122 @@
 import { spawnSync } from "node:child_process";
-import { resolveSupervisorToken } from "@rakazo/core";
+import http from "node:http";
+import net from "node:net";
+import { resolveSupervisorToken } from "@sentrabot/core";
 import { describe, expect, it } from "vitest";
-import { supervisorApp } from "./index.js";
+import { resolveDockerSocketPath, supervisorApp, waitForScreenReady } from "./index.js";
 import {
   assertRequestIdentity,
+  attemptComputerControl,
+  ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  computerControlTimeoutMs,
   containerActionStep,
+  containerActionSteps,
+  DOCKER_BROWSER_ALIASES,
+  demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
+  isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
   parseObservation,
+  preferComputerControl,
   releaseAssignedScreen,
   type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  shouldReplayComputerActions,
   stopExtraScreenCommand,
 } from "./supervisor-logic.js";
 
 const token = resolveSupervisorToken(process.env);
+
+describe("computer screen readiness", () => {
+  it("waits for the server to actually answer HTTP requests before succeeding", async () => {
+    const server = http.createServer((_req, res) => res.end("ok"));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    try {
+      await expect(waitForScreenReady("127.0.0.1", address.port, 2_000)).resolves.toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("does not treat an open TCP port as ready when nothing is serving HTTP on it yet", async () => {
+    // Regression test: a bare TCP accept (e.g. the Docker port mapping coming
+    // up before websockify inside the container does) must not be mistaken
+    // for the screen being ready — that gap is exactly what caused
+    // "socket hang up" in the browser.
+    const server = net.createServer((socket) => socket.destroy());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    try {
+      await expect(waitForScreenReady("127.0.0.1", address.port, 700)).resolves.toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("does not treat HTTP error responses as ready", async () => {
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 503;
+      res.end("starting");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    try {
+      await expect(waitForScreenReady("127.0.0.1", address.port, 700)).resolves.toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("does not treat redirect responses as ready", async () => {
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 302;
+      res.setHeader("Location", "/vnc.html");
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    try {
+      await expect(waitForScreenReady("127.0.0.1", address.port, 700)).resolves.toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("times out instead of hanging when nothing is listening", async () => {
+    const server = net.createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    const closedPort = address.port;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    await expect(waitForScreenReady("127.0.0.1", closedPort, 700)).resolves.toBe(false);
+  });
+});
+
+describe("sandbox supervisor Docker endpoint", () => {
+  it("respects Docker host and socket overrides before platform defaults", () => {
+    expect(resolveDockerSocketPath({ DOCKER_HOST: "tcp://docker.test:2375" }, "win32")).toBe(
+      undefined,
+    );
+    expect(resolveDockerSocketPath({ DOCKER_SOCKET: "/tmp/docker.sock" }, "win32")).toBe(
+      "/tmp/docker.sock",
+    );
+    expect(resolveDockerSocketPath({}, "win32")).toBe("//./pipe/docker_engine");
+    expect(resolveDockerSocketPath({}, "linux")).toBe("/var/run/docker.sock");
+  });
+});
 
 describe("sandbox supervisor HTTP boundary", () => {
   it("keeps health public while every computer route requires the service token", async () => {
@@ -65,8 +161,8 @@ describe("sandbox supervisor HTTP boundary", () => {
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
-        "x-rakazo-bot-id": "other-bot",
-        "x-rakazo-workspace-id": "workspace",
+        "x-sentrabot-bot-id": "other-bot",
+        "x-sentrabot-workspace-id": "workspace",
       },
       body: JSON.stringify({
         botId: "bot",
@@ -107,6 +203,165 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
     });
+  });
+
+  it("routes Docker browser aliases through the safe wrapper on every display", () => {
+    for (const application of DOCKER_BROWSER_ALIASES) {
+      expect(
+        containerActionStep({ kind: "launch", application, uri: "https://example.com" }, ":2"),
+      ).toEqual({
+        argv: ["env", "DISPLAY=:2", "sentrabot-browser", "https://example.com"],
+      });
+    }
+    expect(containerActionStep({ kind: "launch", application: "xterm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "xterm"],
+    });
+    expect(containerActionStep({ kind: "open", path: "https://example.com" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "xdg-open", "https://example.com"],
+    });
+  });
+
+  it("routes mixed-case Docker browser aliases through the safe wrapper", () => {
+    for (const application of ["Chrome", "Firefox", "Chromium", "Google-Chrome"]) {
+      expect(
+        containerActionStep({ kind: "launch", application, uri: "https://example.com" }, ":2"),
+      ).toEqual({
+        argv: ["env", "DISPLAY=:2", "sentrabot-browser", "https://example.com"],
+      });
+    }
+    expect(containerActionStep({ kind: "launch", application: "XTerm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "XTerm"],
+    });
+  });
+
+  it("keeps browser routing argv identical for control and Docker exec fallback", () => {
+    const action = { kind: "launch" as const, application: "chromium", uri: "https://example.com" };
+    expect(containerActionSteps([action], ":2")).toEqual([
+      { argv: ["env", "DISPLAY=:2", "sentrabot-browser", "https://example.com"] },
+    ]);
+  });
+
+  it("falls back to docker-exec when computer control fails", async () => {
+    await expect(
+      preferComputerControl(
+        async () => {
+          throw new Error("connection refused");
+        },
+        async () => "docker-exec",
+      ),
+    ).resolves.toBe("docker-exec");
+    await expect(preferComputerControl(undefined, async () => "docker-exec")).resolves.toBe(
+      "docker-exec",
+    );
+    await expect(
+      preferComputerControl(
+        async () => "fast-path",
+        async () => "docker-exec",
+      ),
+    ).resolves.toBe("fast-path");
+  });
+
+  it("replays actions only when control was never reached", async () => {
+    await expect(attemptComputerControl(undefined)).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      attemptComputerControl(async () => {
+        throw new ComputerControlUnavailableError("fetch failed");
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      attemptComputerControl(async () => {
+        throw new Error("computer action failed");
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    await expect(
+      attemptComputerControl(async () => {
+        throw timeout;
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(isComputerControlUnavailable(new TypeError("fetch failed"))).toBe(false);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("connect ECONNREFUSED 127.0.0.1:7070"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("connect ENETUNREACH 172.18.0.4:7070"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("read ECONNRESET"),
+        }),
+      ),
+    ).toBe(false);
+    expect(isComputerControlUnavailable(timeout)).toBe(false);
+    await expect(attemptComputerControl(async () => ({ completed: 2 }))).resolves.toEqual({
+      status: "ok",
+      value: { completed: 2 },
+    });
+  });
+
+  it("falls back on connection refused but does not replay after a request-sent failure", async () => {
+    const refused = await attemptComputerControl(async () => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error("connect ECONNREFUSED 172.18.0.4:7070"),
+      });
+    });
+    expect(refused).toEqual({ status: "unavailable" });
+    expect(shouldReplayComputerActions(refused)).toBe(true);
+
+    const afterWrite = await attemptComputerControl(async () => {
+      throw new Error("computer control failed");
+    });
+    expect(afterWrite).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(afterWrite)).toBe(false);
+
+    const timedOut = await attemptComputerControl(async () => {
+      throw Object.assign(new Error("The operation was aborted due to timeout"), {
+        name: "TimeoutError",
+      });
+    });
+    expect(timedOut).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(timedOut)).toBe(false);
+
+    const reset = await attemptComputerControl(async () => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error("read ECONNRESET"),
+      });
+    });
+    expect(reset).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(reset)).toBe(false);
+  });
+
+  it("extends the computer control deadline for mapped waits", () => {
+    expect(computerControlTimeoutMs([])).toBe(15_000);
+    expect(computerControlTimeoutMs([{ kind: "wait", ms: 5_000 }], 5_000)).toBe(25_000);
+    expect(
+      computerControlTimeoutMs(
+        [
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+        ],
+        5_000,
+      ),
+    ).toBe(60_000);
   });
 
   it("wraps sandbox commands in a process-tree timeout", () => {
@@ -255,5 +510,71 @@ describe("sandbox supervisor input containment", () => {
       activeWindow: { id: "99", title: "Browser" },
     });
     expect(() => parseObservation("GEOM 1280 800\nIMAGE ")).toThrow(/no image/);
+  });
+});
+
+describe("docker exec stream demux", () => {
+  const frame = (type: number, text: string) => {
+    const payload = Buffer.from(text, "utf8");
+    const header = Buffer.alloc(8);
+    header[0] = type;
+    header.writeUInt32BE(payload.length, 4);
+    return Buffer.concat([header, payload]);
+  };
+
+  it("keeps stderr frames out of stdout", () => {
+    const stream = Buffer.concat([
+      frame(1, "aGVsbG8="),
+      frame(2, "python: DeprecationWarning\n"),
+      frame(1, "\n"),
+    ]);
+    expect(demuxDockerStream(stream)).toEqual({
+      stdout: "aGVsbG8=\n",
+      stderr: "python: DeprecationWarning\n",
+    });
+  });
+
+  it("treats a raw tty stream as stdout", () => {
+    expect(demuxDockerStream(Buffer.from("plain output\n"))).toEqual({
+      stdout: "plain output\n",
+      stderr: "",
+    });
+    expect(demuxDockerStream(Buffer.alloc(0))).toEqual({ stdout: "", stderr: "" });
+  });
+
+  it("falls back to raw stdout when the stream is not a complete multiplexed sequence", () => {
+    const cut = Buffer.concat([frame(1, "kept"), frame(2, "truncated stderr")]).subarray(
+      0,
+      12 + 8 + 6,
+    );
+    expect(demuxDockerStream(cut)).toEqual({ stdout: cut.toString("utf8"), stderr: "" });
+    const dangling = Buffer.concat([frame(1, "ok"), Buffer.from([1, 0, 0])]);
+    expect(demuxDockerStream(dangling)).toEqual({
+      stdout: dangling.toString("utf8"),
+      stderr: "",
+    });
+  });
+
+  it("treats raw payloads that begin with 0x01 or 0x02 as stdout when not valid frames", () => {
+    // size 0xffffffff does not fit remaining bytes → not a complete multiplexed stream
+    const raw01 = Buffer.from([0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x41, 0x42]);
+    expect(demuxDockerStream(raw01)).toEqual({
+      stdout: raw01.toString("utf8"),
+      stderr: "",
+    });
+    const raw02 = Buffer.from([0x02, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x43, 0x44]);
+    expect(demuxDockerStream(raw02)).toEqual({
+      stdout: raw02.toString("utf8"),
+      stderr: "",
+    });
+  });
+
+  it("rejects frames with nonzero reserved header padding as raw stdout", () => {
+    // type 1, nonzero padding, size 0 — would look like an empty stdout frame without the check
+    const padded = Buffer.from([0x01, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00]);
+    expect(demuxDockerStream(padded)).toEqual({
+      stdout: padded.toString("utf8"),
+      stderr: "",
+    });
   });
 });

@@ -38,7 +38,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
         env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          DATABASE_URL: postgres://sentrabot:sentrabot@127.0.0.1:5433/sentrabot
       - run: pnpm check
 
   build:
@@ -55,11 +55,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
         env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          DATABASE_URL: postgres://sentrabot:sentrabot@127.0.0.1:5433/sentrabot
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
       - name: Electron smoke
-        run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
+        run: xvfb-run --auto-servernum pnpm --filter @sentrabot/desktop exec playwright test --config e2e/playwright.config.ts
 
   test:
     name: Unit tests
@@ -74,7 +74,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
         env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          DATABASE_URL: postgres://sentrabot:sentrabot@127.0.0.1:5433/sentrabot
       - run: pnpm test
 
   test-integration:
@@ -110,7 +110,7 @@ jobs:
       cancel-in-progress: false
     environment:
       name: production
-      url: https://app.rakazo.com
+      url: https://app.sentrabot.com
     steps:
       - name: Configure production SSH identity
         env:
@@ -120,10 +120,10 @@ jobs:
           test -n "$SSH_PRIVATE_KEY"
           test -n "$SSH_KNOWN_HOSTS"
           install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/rakazo-production"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/sentrabot-production"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/rakazo-production" "$HOME/.ssh/known_hosts"
-          ssh-keygen -y -f "$HOME/.ssh/rakazo-production" >/dev/null
+          chmod 600 "$HOME/.ssh/sentrabot-production" "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/sentrabot-production" >/dev/null
 
       - name: Deploy successful main revision
         env:
@@ -133,7 +133,7 @@ jobs:
           test -n "$SSH_HOST"
           test -n "$SSH_USER"
           ssh -F /dev/null \
-            -i "$HOME/.ssh/rakazo-production" \
+            -i "$HOME/.ssh/sentrabot-production" \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o IdentitiesOnly=yes \

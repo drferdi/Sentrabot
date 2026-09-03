@@ -1,16 +1,16 @@
 # Computer runtime
 
-Sentra Agent keeps the agent runtime and the computer runtime separate:
+Sentra Bot keeps the agent runtime and the computer runtime separate:
 
 ```text
-chat/API -> one Pi agent session -> Sentra Agent computer tools -> SandboxProvider -> E2B / Daytona / Box
+chat/API -> one Pi agent session -> Sentra Bot computer tools -> SandboxProvider -> E2B / Daytona / Box
                                                    |-> Docker
                                                    |-> desktop/fake
 
-SandboxProvider workspace <-> AgentHomeStore <-> Sentra Agent-owned DATA_DIR
+SandboxProvider workspace <-> AgentHomeStore <-> Sentra Bot-owned DATA_DIR
 ```
 
-Pi runs in the Sentra Agent API/worker process. It is not installed in, or executed by, E2B. The built-in tools are ordinary Pi tools, not Claude- or MCP-specific tools, so any model exposed through Pi can call them. Screen operation still requires a model that can accept image tool results and reason about screenshots.
+Pi runs in the Sentra Bot API/worker process. It is not installed in, or executed by, E2B. The built-in tools are ordinary Pi tools, not Claude- or MCP-specific tools, so any model exposed through Pi can call them. Screen operation still requires a model that can accept image tool results and reason about screenshots.
 
 ## Computer contract
 
@@ -27,11 +27,11 @@ Each workspace gets one Team Computer by default, so bots share its browser sess
 
 The model gets `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `shell`, and file tools. An action can settle and return the resulting screenshot in one call. Identical consecutive frames keep their metadata but omit duplicate image bytes from model context.
 
-Human input and agent input may coexist. “Take control” changes whether the embedded viewer accepts user input; it does not create an exclusive machine lock or automatically pause an active run. `request_takeover` remains available when the model explicitly needs protected input or human judgment.
+Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. `request_takeover` remains available when the model explicitly needs protected input or human judgment.
 
 ## E2B backend
 
-The first cloud implementation uses `@e2b/desktop` directly. Sentra Agent provisions or reconnects the desktop, maintains its authenticated live-view URL, captures PNG observations, performs mouse/keyboard/scroll/app actions, executes shell commands, and accesses files through the E2B SDK.
+The first cloud implementation uses `@e2b/desktop` directly. Sentra Bot provisions or reconnects the desktop, maintains its authenticated live-view URL, captures PNG observations, performs mouse/keyboard/scroll/app actions, executes shell commands, and accesses files through the E2B SDK.
 
 On Team Computers, bot index 0 uses the E2B desktop stream and SDK screenshot/input APIs. Additional Team bots get their own Xvfb display, view port (`6080 + 2i`), and interactive control port (`6081 + 2i`) spawned inside the same sandbox via shell commands. Takeover opens the signed control URL for that bot's screen, not the shared primary stream.
 
@@ -41,15 +41,15 @@ The database stores the provider kind and opaque `providerRef`. That reference i
 
 ## Box backend
 
-The Box adapter uses ASCII's official TypeScript SDK for lifecycle, command, desktop, and file operations. It creates and resumes boxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The provider's authenticated noVNC page is kept behind Sentra Agent's encrypted screen capability proxy, which binds the view/control policy and keeps the Box desktop secret out of browser-visible URLs; observations and model actions use the same primary `DISPLAY=:0` through ImageMagick and `xdotool`.
+The Box adapter uses ASCII's official TypeScript SDK for lifecycle, command, desktop, and file operations. It creates and resumes boxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The provider's authenticated noVNC page is kept behind Sentra Bot's encrypted screen capability proxy, which binds the view/control policy and keeps the Box desktop secret out of browser-visible URLs; observations and model actions use the same primary `DISPLAY=:0` through ImageMagick and `xdotool`.
 
 Box stop archives the machine and resume reconnects the same opaque box id. Browser profiles live under the portable workspace and are linked into the machine's Chrome/Firefox config, so normal checkpoint/export behavior includes them. Box has one desktop stream per machine, and the Box emulator reproduces that single-screen constraint for deterministic tests.
 
 ## Persistence
 
-The portable computer workspace is the durable boundary. E2B uses `/home/user/rakazo-home`; Docker and local providers expose the equivalent home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Sentra Agent checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Sentra Agent-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
+The portable computer workspace is the durable boundary. E2B uses `/home/user/sentrabot-home`; Docker and local providers expose the equivalent home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Sentra Bot checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Sentra Bot-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
 
-`LocalAgentHomeStore` currently keeps the latest workspace under `DATA_DIR/homes/<computer-home-key>` and checkpoint metadata separately under `DATA_DIR/home-revisions`. Replacements are staged before the current copy is swapped, and checkpoints are serialized per computer. This implementation is latest-only rather than an immutable revision archive. Production deployments must put `DATA_DIR` on a Sentra Agent-owned persistent volume, encrypt that volume at rest, and include it in off-host backups. The storage interface is deliberately independent of E2B so an object-store-backed implementation can replace the local volume without changing agent tools or sandbox providers.
+`LocalAgentHomeStore` currently keeps the latest workspace under `DATA_DIR/homes/<computer-home-key>` and checkpoint metadata separately under `DATA_DIR/home-revisions`. Replacements are staged before the current copy is swapped, and checkpoints are serialized per computer. This implementation is latest-only rather than an immutable revision archive. Production deployments must put `DATA_DIR` on a Sentra Bot-owned persistent volume, encrypt that volume at rest, and include it in off-host backups. The storage interface is deliberately independent of E2B so an object-store-backed implementation can replace the local volume without changing agent tools or sandbox providers.
 
 Before exporting a remote workspace, remote backends quiesce desktop browsers so profile databases and login state are copied consistently. They exclude only transient cache/lock files inside `.browser-profiles`; similarly named project files remain durable.
 

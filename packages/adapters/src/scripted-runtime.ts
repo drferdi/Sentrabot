@@ -3,8 +3,8 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
-} from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+} from "@sentrabot/adapter-kit";
+import { abortableDelay, inferHandoffTargetName } from "@sentrabot/core";
 
 const running = new Map<string, AbortController>();
 
@@ -22,11 +22,17 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.get(runId)?.abort();
   }
 
-  async *run(request: AgentRunRequest, context: AdapterContext): AsyncIterable<AgentRuntimeEvent> {
+  async *run(
+    request: AgentRunRequest,
+    context?: Partial<AdapterContext>,
+  ): AsyncIterable<AgentRuntimeEvent> {
     const controller = new AbortController();
     running.set(request.runId, controller);
-    const signal = context.signal ?? controller.signal;
+    const signal = context?.signal ?? controller.signal;
     try {
+      if (shouldFail(request.prompt)) {
+        throw new Error("Scripted run failure");
+      }
       if (shouldHang(request.prompt)) {
         yield { type: "progress", text: "still working…" };
         while (!controller.signal.aborted && !signal.aborted) {
@@ -38,6 +44,9 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         return;
       }
       const script = request.script ?? inferScript(request.prompt, request.resumeFromCheckpoint);
+      // Per-run call index so repeated tools (e.g. message_agent) get distinct
+      // executionIds — delivery keys and effect replays key off this value.
+      let toolCallSeq = 0;
       for (const turn of script) {
         if (signal.aborted || controller.signal.aborted) {
           yield { type: "done", text: "stopped" };
@@ -48,6 +57,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {
+          const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
           if (call.name === "run_subagent") {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
@@ -64,7 +74,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
               type: "tool",
               name: call.name,
               args: call.args,
-              executionId: `${request.runId}:${call.name}`,
+              executionId,
             };
             yield {
               type: "subagent",
@@ -80,7 +90,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
             type: "tool",
             name: call.name,
             args: call.args,
-            executionId: `${request.runId}:${call.name}`,
+            executionId,
           };
         }
         if (turn.ask) {
@@ -117,11 +127,15 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
-  if (
-    resumeFromCheckpoint === "takeover" ||
-    lower.includes("completed sign-in") ||
-    lower.includes("continue without requesting takeover")
-  ) {
+  if (resumeFromCheckpoint === "takeover-skipped") {
+    return [
+      {
+        assistant: "login was skipped. continuing without treating sign-in as done.",
+        complete: true,
+      },
+    ];
+  }
+  if (resumeFromCheckpoint === "takeover") {
     return [
       {
         assistant:
@@ -219,6 +233,57 @@ export function inferScript(
       },
     ];
   }
+  if (
+    lower.includes("hand this to") ||
+    lower.includes("hand off to") ||
+    lower.includes("handoff to") ||
+    (lower.includes("@writer") && lower.includes("draft"))
+  ) {
+    const target = inferHandoffTargetName(prompt) ?? "Writer";
+    return [
+      {
+        assistant: "handing this off in the group thread.",
+        toolCalls: [
+          {
+            name: "handoff_to_bot",
+            args: {
+              confirm_name: target,
+              message: prompt,
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  const shellCommand = /run the shell command "([^"]+)"/i.exec(prompt)?.[1];
+  if (shellCommand) {
+    return [
+      {
+        assistant: "Command finished.",
+        toolCalls: [{ name: "shell", args: { command: shellCommand } }],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.startsWith("run taught skill:") || lower.includes("this is a safe test")) {
+    return [
+      {
+        assistant:
+          "Running the taught skill using its saved playbook. I will follow the demonstrated steps and report the result.",
+        complete: true,
+      },
+    ];
+  }
+  if (/^run\s+/.test(lower)) {
+    return [
+      {
+        assistant:
+          "Using the saved taught skill playbook for that request and following its steps.",
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("connector") || lower.includes("crm") || lower.includes("destination")) {
     return [
       {
@@ -226,7 +291,7 @@ export function inferScript(
         toolCalls: [
           {
             name: "destination.write",
-            args: { collection: "notes", title: "Sentra Agent result", body: prompt },
+            args: { collection: "notes", title: "Sentra Bot result", body: prompt },
           },
         ],
         complete: true,
@@ -278,6 +343,10 @@ export function inferScript(
       complete: true,
     },
   ];
+}
+
+function shouldFail(prompt: string): boolean {
+  return prompt.toLowerCase().includes("fail this run");
 }
 
 function shouldHang(prompt: string): boolean {

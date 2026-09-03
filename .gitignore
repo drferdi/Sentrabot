@@ -18,6 +18,7 @@ apps/**/data
 apps/web/dist
 apps/desktop/dist
 apps/desktop/out
+apps/desktop/e2e/screenshots
 apps/mobile/.expo
 apps/mobile/dist
 apps/mobile/ios
@@ -35,3 +36,16 @@ verify-report
 .last-deployed-revision
 design/
 PRODUCT_PLAN.md
+
+# Local agent state and visual-review captures; neither is product source.
+.agent/
+.mimosa/
+_preview/
+_preview*.png
+_avatar_preview.png
+_phone_preview.png
+
+# Lingui compiled catalogs — Vite plugin compiles .po at build time
+apps/web/src/locales/**/*.mjs
+apps/web/src/locales/**/*.js
+apps/web/scripts/msgids.json

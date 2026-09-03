@@ -1,4 +1,4 @@
-﻿import { existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
@@ -15,7 +15,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
+    url: process.env.DATABASE_URL ?? "postgres://sentrabot:sentrabot@127.0.0.1:5433/sentrabot",
   },
 });
-

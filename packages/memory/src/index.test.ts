@@ -1,4 +1,4 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext } from "@sentrabot/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownMemoryStore } from "./index.js";
 
@@ -44,6 +44,38 @@ describe("memory store contract shape", () => {
         botId: "bot-1",
       },
       orderBy: [{ updatedAt: "desc" }, { path: "asc" }],
+    });
+  });
+
+  it("looks up an existing document scoped to the committing user, not any user at that path", async () => {
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const create = vi.fn().mockResolvedValue({
+      id: "memory-2",
+      path: "notes.md",
+      content: "hi",
+      revision: 1,
+    });
+    const revisionCreate = vi.fn().mockResolvedValue(undefined);
+    const store = new MarkdownMemoryStore({
+      memoryDocument: { findFirst, create },
+      memoryRevision: { create: revisionCreate },
+    } as never);
+
+    await store.commit({ scope: "user", path: "notes.md", content: "hi" }, context);
+
+    // The natural key a second user's own "notes.md" must not collide with must include userId,
+    // matching the DB's (workspaceId, userId, scope, botId, path) unique index.
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        scope: "user",
+        botId: null,
+        path: "notes.md",
+      },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ workspaceId: "workspace-1", userId: "user-1" }),
     });
   });
 });

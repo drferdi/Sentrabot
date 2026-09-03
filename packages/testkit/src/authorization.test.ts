@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { appContract } from "@rakazo/contracts";
+import { ComposioEmulator } from "@sentrabot/adapters";
+import type { appContract } from "@sentrabot/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -27,7 +28,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   let handles: AppHandles;
   let app: App;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-authz-"));
 
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
@@ -38,6 +39,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
+      composio: new ComposioEmulator(),
     });
     app = handles.app;
   });
@@ -52,10 +54,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["me"],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
+      ["updater/status"],
+      ["updater/check", {}],
+      ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
+      ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
@@ -69,11 +75,21 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["groups/create", { name: "Nope", botIds: ["missing-a", "missing-b"] }],
+      ["groups/list"],
+      ["groups/get", { groupId: "missing-group" }],
+      ["groups/update", { groupId: "missing-group", name: "Nope" }],
+      ["groups/remove", { groupId: "missing-group" }],
+      ["botSections/list"],
+      ["botSections/create", { botId: "missing-bot", name: "Planning" }],
       ["threads/get", { botId: "missing-bot" }],
+      ["threads/get", { groupId: "missing-group" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      ["threads/send", { groupId: "missing-group", text: "Nope" }],
       ["threads/stop", { botId: "missing-bot" }],
+      ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
       [
         "threads/answer",
@@ -104,6 +120,31 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
       ["routines/remove", { routineId: "missing-routine" }],
       ["routines/testRun", { routineId: "missing-routine" }],
+      ["scratchpad/list", { botId: "missing-bot" }],
+      ["scratchpad/create", { botId: "missing-bot", title: "Nope" }],
+      ["scratchpad/update", { itemId: "missing-item", title: "Nope" }],
+      ["scratchpad/remove", { itemId: "missing-item" }],
+      ["skills/list", { botId: "missing-bot" }],
+      ["skills/get", { skillId: "missing-skill" }],
+      ["skills/start", { botId: "missing-bot", goal: "Demonstrate export" }],
+      [
+        "skills/appendEvent",
+        {
+          skillId: "missing-skill",
+          event: { at: new Date().toISOString(), kind: "key", key: "a" },
+        },
+      ],
+      ["skills/snapshot", { skillId: "missing-skill" }],
+      ["skills/stop", { skillId: "missing-skill" }],
+      ["skills/updateDraft", { skillId: "missing-skill", playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: "missing-skill" }],
+      ["skills/testRun", { skillId: "missing-skill" }],
+      ["skills/remove", { skillId: "missing-skill" }],
+      ["agentSkills/list"],
+      ["agentSkills/get", { skillId: "missing-skill" }],
+      ["agentSkills/create", { name: "Unauthenticated", description: "Nope", body: "Steps" }],
+      ["agentSkills/update", { skillId: "missing-skill", description: "Nope" }],
+      ["agentSkills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
@@ -112,12 +153,25 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/begin", connectionInput("Unauthenticated")],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
+      ["approvalRules/list"],
+      [
+        "approvalRules/set",
+        { effect: "require_approval", matchKind: "category", matchValue: "email" },
+      ],
+      ["approvalRules/remove", { id: "missing-rule" }],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["search/query", { q: "anything" }],
+      ["voice/catalog"],
+      ["voice/status"],
+      ["voice/credentials"],
+      ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
+      ["voice/setVoice", { voiceId: "missing-voice" }],
+      ["voice/voices", {}],
+      ["voice/prepare", { text: "Nope" }],
     ]);
 
     const results = await Promise.all(
@@ -133,10 +187,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
   });
 
   it("prevents one user from reading or mutating another user's resources", async () => {
-    const owner = await signup(app, `owner-authz-${stamp}@rakazo.test`, "Authorization Owner");
+    const owner = await signup(app, `owner-authz-${stamp}@sentrabot.test`, "Authorization Owner");
     const intruder = await signup(
       app,
-      `intruder-authz-${stamp}@rakazo.test`,
+      `intruder-authz-${stamp}@sentrabot.test`,
       "Authorization Intruder",
     );
     const ownerActor = await rpc<Actor>(app, owner, "me");
@@ -151,6 +205,28 @@ describeWithDatabase("API authorization and resource isolation", () => {
       "routines/create",
       routineInput(ownerBot.id),
     );
+    const ownerScratchpad = await rpc<{ id: string }>(app, owner, "scratchpad/create", {
+      botId: ownerBot.id,
+      title: "Owner open work",
+      notes: "private",
+    });
+    const ownerSkill = await handles.prisma.taughtSkill.create({
+      data: {
+        workspaceId: ownerActor.workspaceId,
+        botId: ownerBot.id,
+        userId: ownerActor.userId,
+        name: "Owner Skill",
+        goal: "Owner-only skill",
+        status: "saved",
+        playbook: skillPlaybookInput(),
+        recording: { events: [], snapshots: [] },
+      },
+    });
+    const ownerAgentSkill = await rpc<{ id: string }>(app, owner, "agentSkills/create", {
+      name: "Owner Recipe",
+      description: "Owner-only shared skill",
+      body: "1. Do the private thing.",
+    });
     const ownerCapability = await rpc<{ id: string }>(
       app,
       owner,
@@ -222,6 +298,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
+      ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
       [
         "threads/answer",
@@ -246,6 +323,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
+      ["scratchpad/list", { botId: ownerBot.id }],
+      ["scratchpad/create", { botId: ownerBot.id, title: "Stolen item" }],
+      ["skills/list", { botId: ownerBot.id }],
+      ["skills/start", { botId: ownerBot.id, goal: "Intruder demo" }],
       ["artifacts/list", { botId: ownerBot.id }],
       [
         "artifacts/create",
@@ -258,9 +339,32 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
+      ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
+    );
+
+    const ownerBot2 = await rpc<Bot>(app, owner, "bots/create", botInput("Owner Bot Two"));
+    const ownerGroup = await rpc<{ id: string }>(app, owner, "groups/create", {
+      name: "Owner Group",
+      botIds: [ownerBot.id, ownerBot2.id],
+    });
+    const groupCalls: Array<[string, unknown]> = [
+      ["groups/get", { groupId: ownerGroup.id }],
+      ["groups/update", { groupId: ownerGroup.id, name: "Stolen Group" }],
+      ["groups/remove", { groupId: ownerGroup.id }],
+      ["threads/get", { groupId: ownerGroup.id }],
+      ["threads/messages", { groupId: ownerGroup.id, before: 1 }],
+      ["threads/subscribe", { groupId: ownerGroup.id, cursor: -1 }],
+      ["threads/send", { groupId: ownerGroup.id, text: "intruder group message" }],
+      ["threads/stop", { groupId: ownerGroup.id }],
+      ["threads/followUp", { groupId: ownerGroup.id, text: "intruder follow-up" }],
+      ["threads/markRead", { groupId: ownerGroup.id }],
+      ["threads/markUnread", { groupId: ownerGroup.id }],
+    ];
+    await Promise.all(
+      groupCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
     );
 
     // A caller cannot pair their own bot with another workspace's run ID.
@@ -275,6 +379,22 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      ["scratchpad/update", { itemId: ownerScratchpad.id, title: "Stolen item" }],
+      ["scratchpad/remove", { itemId: ownerScratchpad.id }],
+      ["skills/get", { skillId: ownerSkill.id }],
+      [
+        "skills/appendEvent",
+        { skillId: ownerSkill.id, event: { at: new Date().toISOString(), kind: "key", key: "x" } },
+      ],
+      ["skills/snapshot", { skillId: ownerSkill.id }],
+      ["skills/stop", { skillId: ownerSkill.id }],
+      ["skills/updateDraft", { skillId: ownerSkill.id, playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: ownerSkill.id }],
+      ["skills/testRun", { skillId: ownerSkill.id }],
+      ["skills/remove", { skillId: ownerSkill.id }],
+      ["agentSkills/get", { skillId: ownerAgentSkill.id }],
+      ["agentSkills/update", { skillId: ownerAgentSkill.id, description: "Stolen" }],
+      ["agentSkills/remove", { skillId: ownerAgentSkill.id }],
       ["memory/update", { documentId: ownerMemory.id, content: "stolen" }],
       ["connections/complete", { connectionId: ownerConnection.connectionId }],
     ] satisfies Array<[string, unknown]>;
@@ -288,6 +408,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     );
     expect(await rpc<Array<{ id: string }>>(app, intruder, "capabilities/list")).not.toContainEqual(
       expect.objectContaining({ id: ownerCapability.id }),
+    );
+    expect(await rpc<Array<{ id: string }>>(app, intruder, "agentSkills/list")).not.toContainEqual(
+      expect.objectContaining({ id: ownerAgentSkill.id }),
     );
     expect(await rpc<Array<{ id: string }>>(app, intruder, "connections/list")).not.toContainEqual(
       expect.objectContaining({ id: ownerConnection.connectionId }),
@@ -309,7 +432,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.connection.findUniqueOrThrow({
         where: { id: ownerConnection.connectionId },
       }),
-    ).toMatchObject({ status: "pending", userId: ownerActor.userId });
+    ).toMatchObject({ status: "connected", userId: ownerActor.userId });
 
     const ownerBotAfter = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: ownerBot.id },
@@ -318,6 +441,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.routine.findUniqueOrThrow({ where: { id: ownerRoutine.id } }),
     ).toMatchObject({ name: "Owner Routine" });
+    expect(
+      await handles.prisma.scratchpadItem.findUniqueOrThrow({ where: { id: ownerScratchpad.id } }),
+    ).toMatchObject({ title: "Owner open work", notes: "private" });
     expect(
       await handles.prisma.memoryDocument.findUniqueOrThrow({ where: { id: ownerMemory.id } }),
     ).toMatchObject({ content: "owner-only-memory" });
@@ -330,8 +456,50 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
   });
 
+  it("keeps approval rules private to each user in a shared workspace", async () => {
+    const owner = await signup(app, `approval-owner-${stamp}@sentrabot.test`, "Approval Owner");
+    const member = await signup(app, `approval-member-${stamp}@sentrabot.test`, "Approval Member");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const memberActor = await rpc<Actor>(app, member, "me");
+
+    await handles.prisma.member.deleteMany({ where: { userId: memberActor.userId } });
+    await handles.prisma.member.create({
+      data: {
+        id: `approval-member-${stamp}`,
+        organizationId: ownerActor.workspaceId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    const ownerRule = await rpc<{ id: string }>(app, owner, "approvalRules/set", {
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "destination.write",
+    });
+    expect(await rpc<unknown[]>(app, member, "approvalRules/list")).toEqual([]);
+
+    const memberRule = await rpc<{ id: string }>(app, member, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "category",
+      matchValue: "email",
+    });
+    expect(await rpc<Array<{ id: string }>>(app, owner, "approvalRules/list")).toEqual([
+      expect.objectContaining({ id: ownerRule.id }),
+    ]);
+    expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
+      expect.objectContaining({ id: memberRule.id }),
+    ]);
+
+    await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
+    expect(
+      await handles.prisma.actionApprovalRule.findUnique({ where: { id: ownerRule.id } }),
+    ).not.toBeNull();
+  });
+
   it("isolates model defaults by workspace and switches them atomically", async () => {
-    const cookie = await signup(app, `model-defaults-${stamp}@rakazo.test`, "Model Defaults");
+    const cookie = await signup(app, `model-defaults-${stamp}@sentrabot.test`, "Model Defaults");
     const actor = await rpc<Actor>(app, cookie, "me");
     const otherWorkspaceId = `other-model-workspace-${stamp}`;
     const otherSecret = await handles.prisma.secret.create({
@@ -443,8 +611,70 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await missing.text()).toMatch(/credential/i);
   });
 
+  it("validates per-bot model overrides against connected providers and catalog", async () => {
+    const cookie = await signup(app, `bot-model-${stamp}@sentrabot.test`, "Bot Model");
+    const bot = await rpc<
+      Bot & {
+        modelProvider: string | null;
+        modelId: string | null;
+        thinkingLevel: string | null;
+      }
+    >(app, cookie, "bots/create", botInput("Model Bot"));
+    await rpc(app, cookie, "models/connect", {
+      provider: "xai",
+      apiKey: "fake-xai-key-not-real",
+      label: "xAI",
+      modelId: "grok-4.6",
+    });
+
+    const updated = await rpc<
+      Bot & {
+        modelProvider: string | null;
+        modelId: string | null;
+        thinkingLevel: string | null;
+      }
+    >(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+      thinkingLevel: "high",
+    });
+    expect(updated).toMatchObject({
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+      thinkingLevel: "high",
+    });
+
+    const unknown = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "xai",
+      modelId: "not-a-real-grok",
+    });
+    expect(unknown.status).toBeGreaterThanOrEqual(400);
+    expect(await unknown.text()).toMatch(/unknown model/i);
+
+    const disconnected = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "anthropic",
+      modelId: "claude-opus-4-6",
+    });
+    expect(disconnected.status).toBeGreaterThanOrEqual(400);
+    expect(await disconnected.text()).toMatch(/connect/i);
+
+    const partialClear = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelId: null,
+    });
+    expect(partialClear.status).toBeGreaterThanOrEqual(400);
+    expect(await partialClear.text()).toMatch(/both be set or both cleared/i);
+  });
+
   it("chooses the newest duplicate provider credential when selecting a default", async () => {
-    const cookie = await signup(app, `model-duplicates-${stamp}@rakazo.test`, "Model Duplicates");
+    const cookie = await signup(
+      app,
+      `model-duplicates-${stamp}@sentrabot.test`,
+      "Model Duplicates",
+    );
     const actor = await rpc<Actor>(app, cookie, "me");
     const olderSecret = await handles.prisma.secret.create({
       data: {
@@ -516,8 +746,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
   });
 
   it("restricts deployment settings to the deployment owner", async () => {
-    const owner = await signup(app, `deployment-owner-${stamp}@rakazo.test`, "Deployment Owner");
-    const other = await signup(app, `deployment-other-${stamp}@rakazo.test`, "Deployment Other");
+    const owner = await signup(app, `deployment-owner-${stamp}@sentrabot.test`, "Deployment Owner");
+    const other = await signup(app, `deployment-other-${stamp}@sentrabot.test`, "Deployment Other");
     const ownerActor = await rpc<Actor>(app, owner, "me");
     const otherActor = await rpc<Actor>(app, other, "me");
     await handles.prisma.deploymentSettings.update({
@@ -537,9 +767,50 @@ describeWithDatabase("API authorization and resource isolation", () => {
       signupsEnabled: false,
       signupAllowlist: ["attacker@example.test"],
     });
+    await expectForbidden(app, other, "updater/status", {});
+    await expectForbidden(app, other, "updater/check", {});
+    await expectForbidden(app, other, "updater/apply", {});
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
+
+    try {
+      await rpc(app, owner, "deployment/update", { signupsEnabled: false });
+      const closedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `closed-${stamp}@sentrabot.test`,
+          password: "password123",
+          name: "Closed Signup",
+        }),
+      });
+      expect(closedSignup.status).toBe(400);
+      expect(await closedSignup.text()).toContain("Registration is closed");
+
+      const approvedEmail = `approved-${stamp}@example.test`;
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [approvedEmail],
+      });
+      const disallowedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `not-approved-${stamp}@sentrabot.test`,
+          password: "password123",
+          name: "Disallowed Signup",
+        }),
+      });
+      expect(disallowedSignup.status).toBe(400);
+      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      await signup(app, approvedEmail, "Approved Signup");
+    } finally {
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [],
+      });
+    }
   });
 });
 
@@ -558,10 +829,22 @@ function routineInput(botId: string) {
     botId,
     name: "Owner Routine",
     prompt: "owner-only prompt",
-    cron: "0 9 * * 1",
+    crons: ["0 9 * * 1"],
     timezone: "UTC",
     notify: false,
     active: false,
+  };
+}
+
+function skillPlaybookInput() {
+  return {
+    whenToUse: "When needed",
+    inputs: ["example"],
+    steps: ["Do the thing"],
+    howToCheck: "Verify result",
+    whatToReturn: "Summary",
+    approvalBoundaries: "Ask first",
+    failureHandling: "Stop and ask",
   };
 }
 
@@ -616,6 +899,12 @@ async function expectDenied(app: App, cookie: string, procedure: string, body: u
     return;
   }
   expect(response.status, procedure).toBeGreaterThanOrEqual(400);
+}
+
+async function expectForbidden(app: App, cookie: string, procedure: string, body: unknown) {
+  const response = await raw(app, cookie, procedure, body);
+  expect(response.status, procedure).toBe(403);
+  expect(await response.text(), procedure).toMatch(/forbidden/i);
 }
 
 interface Actor {

@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { BoxSandboxProvider, E2BSandboxProvider, PiAgentRuntime } from "@rakazo/adapters";
+import { BoxSandboxProvider, E2BSandboxProvider, PiAgentRuntime } from "@sentrabot/adapters";
 import { afterAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -42,7 +42,7 @@ describeE2b("live E2B canary", () => {
       signal: new AbortController().signal,
     };
     const computer = await sandbox.provision(
-      { botId: "canary", homePath: "/home/user/rakazo-home" },
+      { botId: "canary", homePath: "/home/user/sentrabot-home" },
       ctx,
     );
     try {
@@ -72,7 +72,7 @@ describeBox("live Box canary", () => {
       userId: "box-canary",
       signal: new AbortController().signal,
     };
-    const request = { botId: "box-canary", homePath: "/home/user/rakazo-home" };
+    const request = { botId: "box-canary", homePath: "/home/user/sentrabot-home" };
     let computer = await sandbox.provision(request, ctx);
     try {
       await sandbox.prepare(computer, ctx);
@@ -149,7 +149,7 @@ describePiApp("live OpenRouter product journey", () => {
 
   it("completes a bot turn through the API with the live model", async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
-    const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pi-"));
+    const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-pi-"));
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -158,7 +158,7 @@ describePiApp("live OpenRouter product journey", () => {
     });
     stop = handles.stop;
     const stamp = Date.now();
-    const email = `pi-${stamp}@rakazo.test`;
+    const email = `pi-${stamp}@sentrabot.test`;
     const signup = await handles.app.request("/api/auth/sign-up/email", {
       method: "POST",
       headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },

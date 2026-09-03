@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ThreadSnapshot } from "@rakazo/contracts";
+import type { ThreadSnapshot } from "@sentrabot/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -18,7 +18,7 @@ describeAttachments("chat attachments", () => {
   let app: App;
   let stop: () => Promise<void>;
   const stamp = Date.now();
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-attachments-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "sentrabot-attachments-"));
   const tinyPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     "base64",
@@ -41,7 +41,7 @@ describeAttachments("chat attachments", () => {
   });
 
   it("uploads, sends with image/file, and rejects invalid attachments", async () => {
-    const cookie = await signup(app, `attachments-${stamp}@rakazo.test`, "Attachment User");
+    const cookie = await signup(app, `attachments-${stamp}@sentrabot.test`, "Attachment User");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Attacher",
       title: "Attacher",
@@ -110,7 +110,7 @@ describeAttachments("chat attachments", () => {
   });
 
   it("attaches a workspace file into the thread", async () => {
-    const cookie = await signup(app, `attach-thread-${stamp}@rakazo.test`, "Attach Thread User");
+    const cookie = await signup(app, `attach-thread-${stamp}@sentrabot.test`, "Attach Thread User");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Attacher",
       title: "Attacher",

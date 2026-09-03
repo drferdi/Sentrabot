@@ -1,3 +1,4 @@
+import { createCipheriv, createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
@@ -14,7 +15,19 @@ describe("secret store", () => {
       signal: new AbortController().signal,
     });
     expect(record.ciphertext).not.toContain("sk-or-v1-secretvalue");
-    expect(store.load(record.ciphertext)).toBe("sk-or-v1-secretvalue");
+    expect(record.ciphertext).toMatch(/^v2:/);
+    expect(store.load(record.ciphertext, record.id)).toBe("sk-or-v1-secretvalue");
+    expect(() => store.load(record.ciphertext, "another-row")).toThrow();
+  });
+
+  it("keeps legacy ciphertext readable without rewriting it at startup", () => {
+    const key = "legacy-test-key";
+    const iv = Buffer.alloc(12, 7);
+    const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(key).digest(), iv);
+    const encrypted = Buffer.concat([cipher.update("legacy-secret", "utf8"), cipher.final()]);
+    const legacy = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64");
+    const store = new EncryptedSecretStore(key);
+    expect(store.load(legacy, "secret-row")).toBe("legacy-secret");
   });
 });
 
@@ -28,6 +41,18 @@ describe("scripted runtime", () => {
     const script = inferScript("install the cli and sign in", "takeover");
     expect(script?.some((t) => t.takeover)).toBe(false);
     expect(script?.some((t) => t.complete)).toBe(true);
+  });
+
+  it("resumes a skipped takeover without treating login as done", () => {
+    const script = inferScript("install the cli and sign in", "takeover-skipped");
+    expect(script?.some((t) => t.takeover)).toBe(false);
+    expect(script?.some((t) => t.assistant?.includes("login was skipped"))).toBe(true);
+  });
+
+  it("does not infer a takeover checkpoint from ordinary task text", () => {
+    const script = inferScript("ask me whether to record 'skipped the login'");
+    expect(script?.some((t) => t.assistant?.includes("decision"))).toBe(true);
+    expect(script?.some((t) => t.assistant?.includes("login was skipped"))).toBe(false);
   });
 
   it("routes destination/crm work through the connector", () => {
@@ -135,9 +160,14 @@ describe("builtin tools", () => {
         "shell",
         "remember",
         "request_takeover",
+        "request_secret",
         "run_subagent",
         "spawn_bot",
         "archive_bot",
+        "skill_read",
+        "skill_create",
+        "skill_update",
+        "skill_delete",
       ]),
     );
   });

@@ -20,14 +20,17 @@ async function main() {
       VERIFY_PROVIDERS: "1",
       BETTER_AUTH_SECRET: "provider-canary-auth-secret-at-least-32-characters",
       ENCRYPTION_KEY: "provider-canary-encryption-key-at-least-32-characters",
+      SANDBOX_SUPERVISOR_TOKEN: "provider-canary-supervisor-token-at-least-32-characters",
+      SCREEN_PROXY_SECRET: "provider-canary-screen-proxy-secret-at-least-32-characters",
       BETTER_AUTH_URL: "http://127.0.0.1:5173",
       WEB_ORIGIN: "http://127.0.0.1:5173",
       SIGNUPS_ENABLED: "true",
+      SIGNUP_ALLOWLIST: "",
       DATA_DIR: path.resolve("test-report/canary/data"),
     };
     if (postgres) {
-      execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env });
-      execSync("pnpm --filter @rakazo/db exec prisma migrate deploy", {
+      execSync("pnpm --filter @sentrabot/db generate", { stdio: "inherit", env });
+      execSync("pnpm --filter @sentrabot/db exec prisma migrate deploy", {
         stdio: "inherit",
         env,
         cwd: path.resolve("packages/db"),

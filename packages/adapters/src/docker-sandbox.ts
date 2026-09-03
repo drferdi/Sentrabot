@@ -13,14 +13,22 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
-} from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+} from "@sentrabot/adapter-kit";
+import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@sentrabot/core";
 import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
+
+async function safeBody(res: Response): Promise<string> {
+  try {
+    return (await res.text()).slice(0, 200);
+  } catch {
+    return "";
+  }
+}
 
 export class DockerSandboxProvider implements SandboxProvider {
   private readonly supervisorToken: string;
@@ -52,13 +60,23 @@ export class DockerSandboxProvider implements SandboxProvider {
     return `${this.supervisorUrl.replace(/\/$/, "")}${path}`;
   }
 
+  // No x-sentrabot-screen-id here: the supervisor keys a screen off
+  // x-sentrabot-bot-id alone (the ComputerRef's homeKey — shared across every
+  // bot on a Team Computer, distinct per bot on a dedicated one). Keying it
+  // off the calling bot's own id instead would give each bot on a shared
+  // Team Computer its own Xvfb/Chromium/x11vnc stack — several times the RAM
+  // for one container, and each stack fighting the same Chromium profile dir
+  // (homeKey is shared too) for its SingletonLock, so only the first bot to
+  // grab it gets the real logged-in session and the rest boot to a blank
+  // profile. Screen VIEWING is safely shared already (x11vnc -shared serves
+  // any number of simultaneous viewers of the one desktop); who gets to
+  // actually drive it is gated separately by the execution lease.
   private headers(context: AdapterContext, botId?: string) {
     return {
       authorization: `Bearer ${this.supervisorToken}`,
-      "x-rakazo-workspace-id": context.workspaceId,
-      ...(botId ? { "x-rakazo-bot-id": botId } : {}),
-      ...(context.botId ? { "x-rakazo-screen-id": context.botId } : {}),
-      ...(context.screenLeaseId ? { "x-rakazo-screen-lease-id": context.screenLeaseId } : {}),
+      "x-sentrabot-workspace-id": context.workspaceId,
+      ...(botId ? { "x-sentrabot-bot-id": botId } : {}),
+      ...(context.screenLeaseId ? { "x-sentrabot-screen-lease-id": context.screenLeaseId } : {}),
     };
   }
 
@@ -326,19 +344,26 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await fetch(this.url(`/computers/${computer.id}/stop`), {
+    const res = await fetch(this.url(`/computers/${computer.id}/stop`), {
       method: "POST",
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
+    // 404 means the supervisor no longer has the container, which is the state we want.
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`sandbox stop failed: ${res.status} ${await safeBody(res)}`.trim());
+    }
   }
 
   async destroy(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await fetch(this.url(`/computers/${computer.id}`), {
+    const res = await fetch(this.url(`/computers/${computer.id}`), {
       method: "DELETE",
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`sandbox destroy failed: ${res.status} ${await safeBody(res)}`.trim());
+    }
   }
 
   private async *walkWorkspace(
@@ -372,9 +397,9 @@ export class DockerSandboxProvider implements SandboxProvider {
 }
 
 function dockerCwd(cwd: string | undefined) {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo") return "/home/rakazo";
-  const relative = cwd.startsWith("/home/rakazo/")
-    ? cwd.slice("/home/rakazo/".length)
+  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/sentrabot") return "/home/sentrabot";
+  const relative = cwd.startsWith("/home/sentrabot/")
+    ? cwd.slice("/home/sentrabot/".length)
     : normalizeWorkspacePath(cwd);
-  return path.posix.join("/home/rakazo", relative);
+  return path.posix.join("/home/sentrabot", relative);
 }
