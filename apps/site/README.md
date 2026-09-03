@@ -11,6 +11,13 @@ pnpm --filter cora build
 pnpm --filter cora preview
 ```
 
+## Vercel
+
+Project Root Directory must be `apps/site`. `vercel.json` forces `npm ci` +
+`npm run build` so the deploy does not walk up into the pnpm workspace (which
+pulls Electron/Playwright and can fail with `ERR_INVALID_THIS` /
+`ERR_PNPM_META_FETCH_FAIL` on Vercel).
+
 ## Layout
 
 - `original/` — untouched HTML capture (pre-rebrand archive)
