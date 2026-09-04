@@ -110,7 +110,10 @@ for (const page of pages) {
 }
 
 assertContains("public/privasi/index.html", `rel="canonical" href="${siteOrigin}/privasi.html"`);
-assertContains("public/ketentuan/index.html", `rel="canonical" href="${siteOrigin}/ketentuan.html"`);
+assertContains(
+  "public/ketentuan/index.html",
+  `rel="canonical" href="${siteOrigin}/ketentuan.html"`,
+);
 
 const sitemap = read("public/sitemap.xml");
 for (const loc of [`${siteOrigin}/`, `${siteOrigin}/tentang.html`, `${siteOrigin}/daftar.html`]) {
@@ -118,7 +121,11 @@ for (const loc of [`${siteOrigin}/`, `${siteOrigin}/tentang.html`, `${siteOrigin
     fail(`sitemap.xml missing ${loc}`);
   }
 }
-if (sitemap.includes("privasi.html") || sitemap.includes("ketentuan.html") || sitemap.includes("404.html")) {
+if (
+  sitemap.includes("privasi.html") ||
+  sitemap.includes("ketentuan.html") ||
+  sitemap.includes("404.html")
+) {
   fail("sitemap.xml should not list noindex pages");
 }
 
