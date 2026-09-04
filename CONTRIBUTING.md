@@ -30,7 +30,7 @@ pnpm dev
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
-CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
+CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR. After those jobs on `main` or a PR, `publish Playwright report` uploads the screenshot gallery when `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are set; otherwise that workflow skips and stays green.
 
 ## Secrets and configuration
 
