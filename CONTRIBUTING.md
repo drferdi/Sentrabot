@@ -40,6 +40,8 @@ CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload
 
 The product path is **Pi + Docker + Graphile**. Emulator settings (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) are for tests only.
 
+Engineering requirements: [docs/requirements/](docs/requirements/). Runtime topology: [docs/architecture.md](docs/architecture.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 **Integrations** can use [Composio](https://composio.dev/) or Pipedream Connect as optional managed
 app catalogs. Users can also install HTTPS MCP servers (including Treg) and bounded OpenAPI tool
 sources. Connector tests must stay deterministic and offline. Never put connector credentials in
@@ -58,4 +60,5 @@ capability config, fixtures, logs, or snapshots; use the encrypted secret store 
 | --- | --- |
 | [security@sentrabot.com](mailto:security@sentrabot.com) | Vulnerabilities only — see [SECURITY.md](SECURITY.md) |
 | [support@sentrabot.com](mailto:support@sentrabot.com) | User and support questions |
-| [elie@sentrabot.com](mailto:elie@sentrabot.com) | Maintainer |
+| [GitHub issues](https://github.com/drferdii/sentrabot/issues) | Product bugs and self-host reports (use the templates) |
+| [sentrahai.com](https://sentrahai.com) | Programme and public site |

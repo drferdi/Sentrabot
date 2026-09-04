@@ -40,7 +40,7 @@ The autonomous intelligence layer of Sentra Artificial Intelligence.
 
 **[Sentra Bot](https://bot.sentrahai.com/)** is the operating layer for persistent, composable AI teammates you actually own — agents that can hold memory, execute routines, use computers, and work against your own models, your own data, and your own machines.
 
-The repository is not a single chatbot and not a thin model wrapper. It contains the full runtime surface: API, web and desktop clients, background worker, job orchestration, memory, computer providers, connectors, artifacts, realtime infrastructure, and a deliberately read-only clinical reconnaissance bridge.
+The repository is not a single chatbot and not a thin model wrapper. It contains the full runtime surface: API, web, desktop, and mobile clients, background worker, job orchestration, memory, computer providers, connectors, artifacts, realtime infrastructure, and a role-template catalog. Clinical write access is out of scope.
 
 The objective is precise: **make autonomous intelligence useful without making authority invisible.**
 
@@ -233,7 +233,10 @@ flowchart TB
 - `apps/api` — HTTP API, auth, typed orchestration
 - `apps/web` — React + Vite client
 - `apps/desktop` — Electron shell for Sentra Bot
+- `apps/mobile` — Expo client (same API contracts)
 - `apps/worker` — routines, wakeups, jobs, run continuation
+- `apps/site` — marketing site (npm package name `cora`)
+- `apps/docs` — public Mintlify documentation
 
 </td>
 <td width="50%" valign="top">
@@ -246,6 +249,7 @@ flowchart TB
 - `core` — pure domain logic
 - `db` — Prisma schema, migrations, repositories
 - `memory` — per-bot markdown memory
+- `bot-templates` — 66 Chief-of-Staff role packages
 
 </td>
 </tr>
@@ -267,6 +271,7 @@ flowchart TB
 
 - `infra/compose` — Docker Compose topologies, Caddy, deployment assets
 - `infra/sandboxes` — bot computer images + supervisor
+- `infra/updater` — Compose updater sidecar
 - `scripts` — backup / restore utilities
 
 </td>
@@ -277,16 +282,20 @@ flowchart TB
 <summary><b><code>REPOSITORY MAP // CANONICAL LAYOUT</code></b></summary>
 
 ```text
-sentra-agent/
+sentrabot/
 ├── apps/
 │   ├── api/          # HTTP API + auth + orchestration (Hono, port 3100)
 │   ├── web/          # React + Vite client (port 5173)
 │   ├── desktop/      # Electron shell hosting the web client
-│   └── worker/       # Background worker: routines, wakeups, jobs
+│   ├── mobile/       # Expo client
+│   ├── worker/       # Background worker: routines, wakeups, jobs
+│   ├── site/         # Marketing site
+│   └── docs/         # Public Mintlify docs
 ├── packages/
 │   ├── adapter-kit/  # Shared ports & interfaces
 │   ├── adapters/     # Sandboxes, executors, realtime, connectors, secrets
 │   ├── auth/         # Better Auth wiring
+│   ├── bot-templates/# Role catalog (66 packages)
 │   ├── chat-ui/      # Cross-platform markdown rendering
 │   ├── contracts/    # Shared typed RPC / service contracts
 │   ├── core/         # Pure domain logic
@@ -297,7 +306,9 @@ sentra-agent/
 │   └── ui-web/       # Shared React UI components
 ├── infra/
 │   ├── compose/      # Compose topologies + Dockerfile + Caddy + DEPLOY.md
-│   └── sandboxes/    # Computer, desktop, supervisor images
+│   ├── sandboxes/    # Computer, desktop, supervisor images
+│   └── updater/      # Product-update sidecar
+├── docs/             # Architecture, operator docs, requirements package
 └── scripts/          # backup.sh / restore.sh
 ```
 
@@ -503,7 +514,7 @@ Production uses `backup-prod.sh` with a systemd timer, seven-day rotation, and m
 | `OPENROUTER_API_KEY` / `PI_DEFAULT_PROVIDER` / `PI_DEFAULT_MODEL` | Model provider configuration and defaults. |
 | `E2B_API_KEY` / `DAYTONA_API_KEY` / `DAYTONA_API_URL` / `DAYTONA_TARGET` / `BOX_API_KEY` / `BOX_API_URL` | Computer-provider credentials. |
 | `COMPOSIO_API_KEY` | Optional plugins / connectors. |
-| `EXPO_PUBLIC_API_URL` / `RAKAZO_WEB_URL` | Client overrides for a central origin. |
+| `EXPO_PUBLIC_API_URL` / `SENTRABOT_WEB_URL` | Mobile production origin and Electron web-URL override. |
 | `SMTP_URL` / `VAPID_*` | Optional email and push. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `LOG_LEVEL` | Observability. |
 
@@ -581,7 +592,7 @@ curl --fail https://app.example.com/health
 3. Start `docker-compose.supabase.yml`.
 
 ```bash
-pnpm --filter @rakazo/db exec prisma migrate deploy
+pnpm --filter @sentrabot/db exec prisma migrate deploy
 
 docker compose --env-file .env \
   -f infra/compose/docker-compose.supabase.yml \
@@ -599,7 +610,7 @@ pnpm db:generate
 pnpm db:migrate
 
 # production alternative
-pnpm --filter @rakazo/db exec prisma migrate deploy
+pnpm --filter @sentrabot/db exec prisma migrate deploy
 ```
 
 ---
@@ -671,11 +682,11 @@ flowchart TB
 ### `10 / CLINICAL BOUNDARY`
 
 > [!CAUTION]
-> **The RME bridge is read-only clinical reconnaissance. It is not a clinical write path.**
+> **Sentra Bot is not a hospital information system and has no clinical write path.**
 
-The v0.1 adapter opens the RME in a headed Chromium browser, reads **one patient**, and produces structured, validated JSON.
+This repository does not ship an electronic medical record (RME) adapter. Healthcare role templates in `packages/bot-templates` are operating-layer prompts and policies, not access to a patient record.
 
-The boundary is deliberate:
+The product doctrine for any future clinical integration remains:
 
 ```text
 MANUAL LOGIN
@@ -691,12 +702,10 @@ MANUAL VERIFICATION
 NO WRITE
 ```
 
-- Credentials are never requested, stored, or committed.
-- Login remains manual.
-- The adapter does not write to the patient record.
-- Scope does not expand to all patients or clinical AI until one-patient read behavior is manually verified end to end.
+- Clinical credentials are never requested, stored, or committed in this baseline.
+- Do not document a shipped RME bridge until the adapter exists in code and is verified end to end.
 
-**Clinical autonomy does not begin by granting write access. It begins by proving the read path.**
+**Clinical autonomy does not begin by granting write access. It begins by proving a read path — and that path is not in this repository yet.**
 
 ---
 
@@ -752,9 +761,11 @@ Typed contracts, deterministic tests, topology checks, canaries, runtime health,
 
 The product is **Sentra Bot**.
 
-Internal package identifiers historically retain the `@rakazo/*` namespace from the upstream codebase. This is intentional: user-facing branding changes what the product is called; compatibility-sensitive internal identifiers are not renamed without a technical reason.
+Internal packages use the **`@sentrabot/*`** namespace. Historical `@rakazo/*` identifiers from the upstream codebase **do not exist** in this repository.
 
-**License:** Apache 2.0 — see `LICENSE`.
+Engineering requirements (ISO/IEC/IEEE 29148) live in [`docs/requirements/`](docs/requirements/). Runtime topology lives in [`docs/architecture.md`](docs/architecture.md).
+
+**License:** Apache 2.0 — see `LICENSE` and `NOTICE`.
 
 Operational contracts and security boundaries live in:
 

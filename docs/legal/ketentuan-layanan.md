@@ -16,7 +16,8 @@ Pihak yang terikat kontrak dengan pengguna adalah **PT Adianda Putri Iskandar**.
 Dengan memasang atau memakai SentraBot, Anda menyetujui ketentuan ini. Bila Anda memakainya
 atas nama organisasi, Anda menyatakan berwenang mengikat organisasi tersebut.
 
-**[ISI: alamat terdaftar dan alamat surel kontak.]**
+**[Alamat terdaftar belum dipublikasikan di repositori ini. Jangan memakai alamat fiktif.]**
+Kontak: lihat `SUPPORT.md`. Draf ini belum ditinjau penasihat hukum.
 
 *(Identitas dikonfirmasi Chief, 1 September 2026.)*
 

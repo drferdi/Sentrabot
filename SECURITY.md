@@ -15,7 +15,8 @@ We will acknowledge your report and work on a fix. Please do not file a public i
 ## Other contact
 
 - General support: **support@sentrabot.com**
-- Maintainer: **elie@sentrabot.com**
+- Public site: **https://sentrahai.com**
+- Product issues: **https://github.com/drferdii/sentrabot/issues** (not for unfixed vulnerabilities)
 
 ## Scope
 

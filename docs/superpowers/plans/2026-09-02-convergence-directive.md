@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript strict, Hono, oRPC, Better Auth, Prisma/PostgreSQL, Graphile Worker, Vitest, Playwright, testcontainers (integration harness).
 
-**Governing document:** `docs/plans/CLAUDE CODE — SENTRABOT CONVERGENCE DIRECTIVE.md`
+**Governing documents:** [`docs/architecture.md`](../../architecture.md) (as-built topology) and [`docs/requirements/`](../../requirements/) (requirements baseline). The 2026-09-01 file `docs/plans/CLAUDE CODE — SENTRABOT CONVERGENCE DIRECTIVE.md` is historical.
 
 ## Global Constraints
 
