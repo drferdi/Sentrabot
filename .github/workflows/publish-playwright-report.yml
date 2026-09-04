@@ -27,20 +27,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check S3 credentials
+        id: s3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        shell: bash
+        run: |
+          if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping Playwright visual report publish; S3 credentials are not configured."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
       # workflow_run has repository secrets. Always use trusted default-branch code here;
       # never check out or execute the contributor's pull-request revision.
-      - uses: actions/checkout@v5
+      - if: steps.s3.outputs.configured == 'true'
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           lfs: true
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - if: steps.s3.outputs.configured == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.s3.outputs.configured == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - if: steps.s3.outputs.configured == 'true'
+        run: pnpm install --frozen-lockfile
       - name: Read Playwright job result
+        if: steps.s3.outputs.configured == 'true'
         id: playwright
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +76,7 @@ jobs:
           if [[ "$result" == "timed_out" ]]; then result="failure"; fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Resolve pull request
-        if: github.event.workflow_run.event == 'pull_request'
+        if: steps.s3.outputs.configured == 'true' && github.event.workflow_run.event == 'pull_request'
         id: pull_request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,6 +95,7 @@ jobs:
           fi
           echo "number=$number" >> "$GITHUB_OUTPUT"
       - name: Check for Playwright artifact
+        if: steps.s3.outputs.configured == 'true'
         id: artifact
         env:
           ARTIFACT_NAME: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
@@ -100,7 +119,7 @@ jobs:
             exit 1
           fi
       - name: Download Playwright artifacts
-        if: steps.artifact.outputs.exists == 'true'
+        if: steps.s3.outputs.configured == 'true' && steps.artifact.outputs.exists == 'true'
         uses: actions/download-artifact@v4
         with:
           name: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
@@ -108,6 +127,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
       - name: Publish trusted Playwright screenshot gallery
+        if: steps.s3.outputs.configured == 'true'
         id: publish
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
@@ -131,6 +151,7 @@ jobs:
         run: bash scripts/publish-playwright-report.sh
       - name: Link screenshot gallery from pull request
         if: >-
+          steps.s3.outputs.configured == 'true' &&
           github.event.workflow_run.event == 'pull_request' &&
           steps.pull_request.outputs.number != '' &&
           steps.publish.outputs.latest_pr_run == 'true'
