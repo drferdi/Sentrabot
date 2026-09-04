@@ -8,8 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "node scripts/write-analytics-config.mjs && node scripts/check-seo.mjs && vite build",
+    "preview": "vite preview",
+    "check:seo": "node scripts/check-seo.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

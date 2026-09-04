@@ -1,0 +1,26 @@
+{
+  "name": "Sentra Bot",
+  "short_name": "Sentra Bot",
+  "description": "Agen yang bekerja, bukan sekadar chat.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#0D1117",
+  "theme_color": "#0D1117",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    },
+    {
+      "src": "/assets/favicon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}

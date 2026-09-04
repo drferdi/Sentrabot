@@ -12,6 +12,8 @@ Canonical production host for this package (`apps/site`):
 
 DNS untuk `sentrahai.com` sudah di Vercel (`ns1`/`ns2.vercel-dns.com`). Subdomain `bot` harus di-assign ke project **`sentrabot-site`** (team yang deploy site ini). Apex **jangan** dipindah ke project ini — apex masih dipakai produk lain.
 
+Share preview (WhatsApp / X / LinkedIn) and search tags (`canonical`, `og:*`, `twitter:*`, `sitemap.xml`, `robots.txt`) must use **`https://bot.sentrahai.com`**, not the apex. HTTPS is terminated by Vercel; `vercel.json` adds HSTS.
+
 ## Assign domain (Vercel Dashboard)
 
 1. Buka project **`sentrabot-site`** → **Settings** → **Domains**.

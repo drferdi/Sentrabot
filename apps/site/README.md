@@ -25,6 +25,33 @@ Deploy-critical images under `public/` and `src/` are stored as normal git
 blobs (not Git LFS). Vercel otherwise ships LFS pointer text (~130 bytes) as
 broken PNGs unless Project Settings → Git → Git LFS is enabled.
 
+HTTPS is provided by Vercel. `vercel.json` adds HSTS and does **not** use the
+Vite SPA fallback, so unknown paths serve `public/404.html` instead of the
+homepage.
+
+## Favicon, share preview, SEO, analytics
+
+Browser tabs use `public/favicon.ico` plus `favicon.svg` and
+`apple-touch-icon.png`. WhatsApp, X/Twitter, and LinkedIn read Open Graph and
+Twitter Card tags (`og:image` is `public/og-image.png`, 1200×630). Indexed
+pages also have `title`, `description`, and a canonical URL on
+`https://bot.sentrahai.com`. Apex `sentrahai.com` remains the company hub, not this landing.
+
+`public/sitemap.xml` lists only indexable URLs (home, Tentang, Daftar).
+Privacy and terms stay `noindex` because those drafts are not ready for search
+results. `public/robots.txt` points crawlers at the sitemap.
+
+Analytics is optional and off by default. `public/js/site-analytics.js` loads
+`/analytics.json` and enables **one** vendor if a key is present, in this
+order: PostHog, Plausible, Google Analytics 4. Empty strings mean no third-party
+script. Do not commit real keys. On Vercel, set any of
+`SITE_POSTHOG_KEY` / `SITE_POSTHOG_HOST`, `SITE_PLAUSIBLE_DOMAIN`, or
+`SITE_GA4_MEASUREMENT_ID`; `npm run build` writes them into `analytics.json`.
+
+```bash
+pnpm --filter cora check:seo
+```
+
 ## Layout
 
 - `original/` — untouched HTML capture (pre-rebrand archive)
