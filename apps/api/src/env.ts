@@ -84,6 +84,13 @@ export interface AppEnv {
    * so it stays unmounted unless SENTRABOT_CONTROL_PLANE_RELAY=enabled.
    */
   controlPlaneRelay: boolean;
+  isProduction: boolean;
+  /**
+   * Transactional auth email. Absent means verification and password reset report that they
+   * are unavailable instead of the API refusing to start.
+   */
+  smtpUrl: string | undefined;
+  smtpFrom: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -148,6 +155,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .filter(Boolean),
     port: Number(source.API_PORT ?? 3100),
     controlPlaneRelay: source.SENTRABOT_CONTROL_PLANE_RELAY?.trim() === "enabled",
+    isProduction: source.NODE_ENV === "production",
+    smtpUrl: optional(source.SMTP_URL),
+    smtpFrom: optional(source.SMTP_FROM),
     gitSha: optional(source.GIT_SHA) ?? optional(source.SENTRABOT_GIT_SHA),
     updaterUrl,
     updaterToken,
