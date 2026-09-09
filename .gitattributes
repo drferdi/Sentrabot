@@ -15,3 +15,9 @@ apps/site/public/**/*.ico filter= diff= merge= -text
 apps/site/src/**/*.png filter= diff= merge= -text
 apps/site/src/**/*.jpg filter= diff= merge= -text
 apps/site/src/**/*.ico filter= diff= merge= -text
+
+# The signed brand package verifies these CSV files by byte-level SHA-256.
+docs/brand/MANIFEST.csv -text -whitespace
+docs/brand/10-BRAND-GUIDELINES/sentra-brand-asset-index.csv -text -whitespace
+# Preserve the approved guide verbatim, including its intentional final blank line.
+docs/brand/10-BRAND-GUIDELINES/sentra-logo-usage-guide.md -whitespace

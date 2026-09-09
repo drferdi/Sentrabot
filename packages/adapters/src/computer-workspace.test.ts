@@ -7,6 +7,7 @@ import {
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
+import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 
@@ -39,6 +40,21 @@ describe("provider-neutral computer workspace", () => {
       { argv: ["mkdir", "-p", "shared", "bots/bot-1"] },
       context,
     );
+  });
+
+  it("prepares Team Computer folders through the Windows desktop provider", async () => {
+    if (process.platform !== "win32") return;
+    const provider = new DesktopSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "team-workspace", homePath: "ignored" },
+      context,
+    );
+
+    await ensureComputerWorkspaceLayout(provider, computer, "team", "bot-1", context);
+
+    await expect(provider.listFiles(computer, "shared", context)).resolves.toEqual([]);
+    await expect(provider.listFiles(computer, "bots/bot-1", context)).resolves.toEqual([]);
+    await provider.destroy(computer, context);
   });
 
   it("restores a checkpoint into a replacement provider machine", async () => {

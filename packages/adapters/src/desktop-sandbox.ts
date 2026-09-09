@@ -718,6 +718,27 @@ function runCommand(
   timeoutMs: number,
   signal: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  const mkdirPaths = argv.slice(2);
+  const canUseNativeMkdir =
+    process.platform === "win32" &&
+    argv[0] === "mkdir" &&
+    argv[1] === "-p" &&
+    mkdirPaths.length > 0 &&
+    mkdirPaths.every((directory) => {
+      const resolved = path.resolve(cwd, directory);
+      return resolved === cwd || resolved.startsWith(`${cwd}${path.sep}`);
+    });
+  if (canUseNativeMkdir) {
+    return Promise.all(
+      mkdirPaths.map((directory) => mkdir(path.resolve(cwd, directory), { recursive: true })),
+    )
+      .then(() => ({ stdout: "", stderr: "", code: 0 }))
+      .catch((error: unknown) => ({
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+        code: 1,
+      }));
+  }
   return new Promise((resolve) => {
     const child = spawn(argv[0]!, argv.slice(1), {
       cwd,

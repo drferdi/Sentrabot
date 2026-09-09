@@ -786,7 +786,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         }),
       });
       expect(closedSignup.status).toBe(400);
-      expect(await closedSignup.text()).toContain("Registration is closed");
+      expect(await closedSignup.text()).toContain("Pendaftaran ditutup");
 
       const approvedEmail = `approved-${stamp}@example.test`;
       await rpc(app, owner, "deployment/update", {
@@ -803,7 +803,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         }),
       });
       expect(disallowedSignup.status).toBe(400);
-      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      expect(await disallowedSignup.text()).toContain("Email ini tidak diizinkan mendaftar");
       await signup(app, approvedEmail, "Approved Signup");
     } finally {
       await rpc(app, owner, "deployment/update", {
