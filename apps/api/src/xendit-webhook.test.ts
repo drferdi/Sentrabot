@@ -56,4 +56,37 @@ describe("Xendit billing webhook", () => {
       expect.objectContaining({ providerEventId: "ps-1", lifecycle: "paid" }),
     );
   });
+
+  it("forwards an expired checkout session as renewal_failed for state-aware handling", async () => {
+    const { mountXenditWebhookRoutes } = await import("./xendit-webhook.js");
+    const { Hono } = await import("hono");
+    const app = new Hono();
+    const resolvePaymentTarget = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    const applyVerifiedPayment = vi.fn().mockResolvedValue({ applied: true });
+    mountXenditWebhookRoutes(app, {
+      callbackToken: "callback-token",
+      resolvePaymentTarget,
+      applyVerifiedPayment,
+    });
+
+    const response = await app.request("/v1/billing/xendit/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-callback-token": "callback-token" },
+      body: JSON.stringify({
+        event: "payment_session.expired",
+        data: {
+          payment_session_id: "ps-expired-1",
+          reference_id: "checkout-1",
+        },
+      }),
+    });
+
+    expect(response.status).toBe(204);
+    expect(applyVerifiedPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ providerEventId: "ps-expired-1", lifecycle: "renewal_failed" }),
+    );
+  });
 });

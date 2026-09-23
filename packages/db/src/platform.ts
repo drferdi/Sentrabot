@@ -597,6 +597,9 @@ interface PlatformTransaction {
     }): Promise<{ id: string }>;
   };
   subscription: {
+    findUnique(input: {
+      where: { workspaceId: string };
+    }): Promise<{ state: string } | null>;
     upsert(input: {
       where: { workspaceId: string };
       create: {
@@ -635,10 +638,69 @@ export function createPlatformDatabase(db: Db): PlatformDatabase {
             create: (input) => tx.paymentEvent.create(input),
           },
           subscription: {
+            findUnique: (input) =>
+              tx.subscription.findUnique({
+                where: input.where,
+                select: { state: true },
+              }),
             upsert: (input) => tx.subscription.upsert(input),
           },
         }),
       ),
+  };
+}
+
+interface PaymentEntitlementOutcome {
+  subscriptionPlanCode: string;
+  subscriptionState: string;
+  entitlementPlanCode: string;
+  entitlementState: string;
+  graceEndsAt: Date | null;
+  updateEntitlements: boolean;
+}
+
+function resolvePaymentEntitlementOutcome(
+  lifecycle: VerifiedPaymentEventInput["lifecycle"],
+  currentSubscriptionState: string | undefined,
+  now: Date,
+): PaymentEntitlementOutcome {
+  if (lifecycle === "paid") {
+    return {
+      subscriptionPlanCode: "plus",
+      subscriptionState: "active_plus",
+      entitlementPlanCode: "plus",
+      entitlementState: "active_plus",
+      graceEndsAt: null,
+      updateEntitlements: true,
+    };
+  }
+  if (currentSubscriptionState === "checkout_pending") {
+    return {
+      subscriptionPlanCode: "free",
+      subscriptionState: "free",
+      entitlementPlanCode: "free",
+      entitlementState: "free",
+      graceEndsAt: null,
+      updateEntitlements: true,
+    };
+  }
+  if (currentSubscriptionState === "active_plus") {
+    return {
+      subscriptionPlanCode: "plus",
+      subscriptionState: "grace_period",
+      entitlementPlanCode: "free",
+      entitlementState: "grace_period",
+      graceEndsAt: addSevenCalendarDays(now),
+      updateEntitlements: true,
+    };
+  }
+  return {
+    subscriptionPlanCode: "free",
+    subscriptionState: "free",
+    entitlementPlanCode: "free",
+    entitlementState: "free",
+    graceEndsAt: null,
+    updateEntitlements: false,
   };
 }
 
@@ -656,7 +718,14 @@ export async function applyVerifiedPaymentEvent(
       },
     });
     if (existing) return { applied: false };
-    const paid = input.lifecycle === "paid";
+    const currentSubscription = await tx.subscription.findUnique({
+      where: { workspaceId: input.workspaceId },
+    });
+    const outcome = resolvePaymentEntitlementOutcome(
+      input.lifecycle,
+      currentSubscription?.state,
+      input.now,
+    );
     await tx.paymentEvent.create({
       data: {
         provider: input.provider,
@@ -667,32 +736,33 @@ export async function applyVerifiedPaymentEvent(
         verifiedAt: input.now,
       },
     });
+    if (!outcome.updateEntitlements) return { applied: true };
     await tx.subscription.upsert({
       where: { workspaceId: input.workspaceId },
       create: {
         userId: input.userId,
         workspaceId: input.workspaceId,
-        planCode: "plus",
-        state: paid ? "active_plus" : "grace_period",
+        planCode: outcome.subscriptionPlanCode,
+        state: outcome.subscriptionState,
         provider: input.provider,
       },
       update: {
-        planCode: "plus",
-        state: paid ? "active_plus" : "grace_period",
-        graceEndsAt: paid ? null : addSevenCalendarDays(input.now),
+        planCode: outcome.subscriptionPlanCode,
+        state: outcome.subscriptionState,
+        graceEndsAt: outcome.graceEndsAt,
       },
     });
     await tx.entitlementState.upsert({
       where: { workspaceId: input.workspaceId },
       create: {
         workspaceId: input.workspaceId,
-        planCode: paid ? "plus" : "free",
-        state: paid ? "active_plus" : "grace_period",
+        planCode: outcome.entitlementPlanCode,
+        state: outcome.entitlementState,
         version: 1,
       },
       update: {
-        planCode: paid ? "plus" : "free",
-        state: paid ? "active_plus" : "grace_period",
+        planCode: outcome.entitlementPlanCode,
+        state: outcome.entitlementState,
         version: { increment: 1 },
       },
     });
