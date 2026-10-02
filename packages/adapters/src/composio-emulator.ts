@@ -65,9 +65,7 @@ export class ComposioEmulator implements ComposioProvider {
     const connected =
       context.connectedConnections
         ?.filter((connection) => connection.connectorId === "composio")
-        .map((connection) => connection.externalId) ??
-      context.connectedProviders ??
-      [];
+        .map((connection) => connection.externalId) ?? [];
     return [...new Set(connected)].map((slug) => ({
       name: `${slug}_EMULATED_ACTION`,
       description: `Run a deterministic ${slug} action`,
