@@ -476,9 +476,7 @@ function connectedComposioExternalIds(context: AdapterContext): string[] {
   return (
     context.connectedConnections
       ?.filter((connection) => connection.connectorId === "composio")
-      .map((connection) => connection.externalId) ??
-    context.connectedProviders ??
-    []
+      .map((connection) => connection.externalId) ?? []
   );
 }
 
