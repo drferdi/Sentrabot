@@ -28,6 +28,15 @@
     "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
+  "pnpm": {
+    "overrides": {
+      "decode-uri-component": "0.5.0",
+      "deepmerge-ts": "8.0.0",
+      "fast-uri": "3.1.8",
+      "mysql2": "3.23.1",
+      "uuid": "14.0.2"
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
     "@types/node": "^24.3.0",
