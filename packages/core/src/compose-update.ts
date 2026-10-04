@@ -356,9 +356,6 @@ export const COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS = [
   "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
 ] as const;
 
-/** @deprecated Prefer {@link COMPOSE_PULL_UPGRADE_COMMANDS}; kept for call-site clarity in tests. */
-export const COMPOSE_MANUAL_UPGRADE_COMMANDS = COMPOSE_PULL_UPGRADE_COMMANDS;
-
 /** Exact host commands from docs/self-host.md for source / `pnpm dev` installs. */
 export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
   "git pull",
