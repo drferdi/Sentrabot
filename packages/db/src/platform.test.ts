@@ -8,7 +8,10 @@ describe("platform control-plane repositories", () => {
       findUnique: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: "payment-event-1" }),
     };
-    const subscription = { upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }) };
+    const subscription = {
+      findUnique: vi.fn().mockResolvedValue({ state: "checkout_pending" }),
+      upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
+    };
     const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
     const db = {
       $transaction: async (operation: (tx: any) => Promise<void>) =>
@@ -37,6 +40,94 @@ describe("platform control-plane repositories", () => {
     );
   });
 
+  it("reverts an abandoned checkout to free instead of entering grace period", async () => {
+    const { applyVerifiedPaymentEvent } = await import("./platform.js");
+    const paymentEvent = {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "payment-event-1" }),
+    };
+    const subscription = {
+      findUnique: vi.fn().mockResolvedValue({ state: "checkout_pending" }),
+      upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
+    };
+    const entitlementState = { upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }) };
+    const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
+    const db = {
+      $transaction: async (operation: (tx: any) => Promise<void>) =>
+        operation({
+          runtimeLease: { findUnique: vi.fn(), upsert: vi.fn() },
+          entitlementState,
+          outboxEvent,
+          paymentEvent,
+          subscription,
+        }),
+    };
+
+    await applyVerifiedPaymentEvent(db as any, {
+      provider: "xendit",
+      providerEventId: "session-expired-1",
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      lifecycle: "renewal_failed",
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    });
+
+    expect(subscription.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ planCode: "free", state: "free", graceEndsAt: null }),
+      }),
+    );
+    expect(entitlementState.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ planCode: "free", state: "free" }),
+      }),
+    );
+  });
+
+  it("enters grace period only when an active subscription renewal fails", async () => {
+    const { applyVerifiedPaymentEvent } = await import("./platform.js");
+    const paymentEvent = {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "payment-event-1" }),
+    };
+    const subscription = {
+      findUnique: vi.fn().mockResolvedValue({ state: "active_plus" }),
+      upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
+    };
+    const entitlementState = { upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }) };
+    const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
+    const db = {
+      $transaction: async (operation: (tx: any) => Promise<void>) =>
+        operation({
+          runtimeLease: { findUnique: vi.fn(), upsert: vi.fn() },
+          entitlementState,
+          outboxEvent,
+          paymentEvent,
+          subscription,
+        }),
+    };
+
+    await applyVerifiedPaymentEvent(db as any, {
+      provider: "xendit",
+      providerEventId: "renewal-failed-1",
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      lifecycle: "renewal_failed",
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    });
+
+    expect(subscription.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ planCode: "plus", state: "grace_period" }),
+      }),
+    );
+    expect(entitlementState.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ planCode: "free", state: "grace_period" }),
+      }),
+    );
+  });
+
   it("expires but retains a released lease so the next owner receives a newer epoch", async () => {
     const { releaseRuntimeLease } = await import("./platform.js");
     const upsert = vi.fn().mockResolvedValue({
@@ -60,7 +151,7 @@ describe("platform control-plane repositories", () => {
           entitlementState: { upsert: vi.fn() },
           outboxEvent: { create: vi.fn() },
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 
@@ -261,7 +352,7 @@ describe("platform control-plane repositories", () => {
           entitlementState: { upsert: vi.fn() },
           outboxEvent: { create: vi.fn() },
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 
@@ -286,7 +377,7 @@ describe("platform control-plane repositories", () => {
           entitlementState,
           outboxEvent,
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 
