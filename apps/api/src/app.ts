@@ -17,6 +17,7 @@ import {
   createJobReconciler,
   type createRunExecutor,
   createRunSecretWriter,
+  createSmtpEmailSender,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -243,20 +244,35 @@ export async function createApp(
     phoneLocale,
   });
   const { sandbox, home, artifacts, stack, connector, executor, jobHandlers } = composition;
+  // Undefined when the deployment configured no SMTP_URL. Auth flows that need email check for
+  // it and report that they are unavailable, so a deployment without SMTP still boots and runs.
+  const emailSender = createSmtpEmailSender({
+    SMTP_URL: env.smtpUrl,
+    SMTP_FROM: env.smtpFrom,
+  });
   const auth = createAuth(prisma, {
     secret: env.authSecret,
     baseURL: env.authUrl,
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
+    emailSender,
+    onEmailUnavailable: (reason) => console.warn(`[auth] ${reason}`),
+    // Harness/Vitest suites signup many users from one IP; keep production limiter on.
+    rateLimitEnabled:
+      process.env.VITEST !== "true" && process.env.AUTH_RATE_LIMIT_ENABLED !== "false",
     extraOrigins: [
       "sentrabot://",
-      "exp://",
-      "exp://*",
-      "http://localhost:8081",
-      "http://127.0.0.1:8081",
-      "http://localhost:19006",
-      "http://127.0.0.1:19006",
+      ...(env.isProduction
+        ? []
+        : [
+            "exp://",
+            "exp://*",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+            "http://localhost:19006",
+            "http://127.0.0.1:19006",
+          ]),
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -341,7 +357,7 @@ export async function createApp(
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
-      return c.json({ error: "Not available in version 1" }, 404);
+      return c.json({ error: "Belum tersedia di versi 1" }, 404);
     }
     return auth.handler(c.req.raw);
   });
@@ -638,16 +654,55 @@ export async function createApp(
   };
 }
 
-function isTrustedOrigin(origin: string, env: AppEnv) {
+/**
+ * `localhost` and `127.0.0.1` are different origins to a browser, but a self-host operator who
+ * configured one and typed the other means the same machine. Only the loopback aliases of an
+ * origin this deployment already declared are accepted, so this widens nothing beyond it.
+ */
+function matchesConfiguredLoopback(candidate: URL, env: AppEnv) {
+  const loopbackHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
+  if (!loopbackHosts.has(candidate.hostname)) return false;
+  return [env.webOrigin, env.apiUrl, env.authUrl].some((configured) => {
+    try {
+      const url = new URL(configured);
+      return (
+        loopbackHosts.has(url.hostname) &&
+        url.protocol === candidate.protocol &&
+        url.port === candidate.port
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Only ever consulted by the CORS middleware. A missing Origin means the request was not sent
+ * as cross-origin at all, so it is allowed here — do NOT reuse this for CSRF or authentication,
+ * where an absent Origin must not be treated as trusted.
+ */
+export function isTrustedOrigin(origin: string, env: AppEnv) {
   if (!origin) return true;
   if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
-  if (origin.startsWith("sentrabot://") || origin.startsWith("exp://")) return true;
+  // Production mobile always sends the literal "sentrabot://" Origin header (never a suffixed
+  // variant), so this stays trusted in production but only as an exact match.
+  if (origin === "sentrabot://") return true;
+  if (!env.isProduction && origin.startsWith("exp://")) return true;
+  // Every check below inspects the host, so the value has to be a real Origin serialization
+  // first: a browser sends scheme://host[:port] and nothing else. Without this, userinfo would
+  // carry "http://evil.com@localhost:5173" into the loopback check on hostname alone. Custom
+  // schemes are all handled above — their `origin` serializes to "null", so they must never
+  // reach this guard.
+  let parsed: URL;
   try {
-    const host = new URL(origin).hostname;
-    return host === "localhost" || host === "127.0.0.1";
+    parsed = new URL(origin);
   } catch {
     return false;
   }
+  if (parsed.origin !== origin) return false;
+  if (matchesConfiguredLoopback(parsed, env)) return true;
+  if (env.isProduction) return false;
+  return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
 }
 
 function sessionHeaders(request: Request) {

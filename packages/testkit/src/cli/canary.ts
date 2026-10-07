@@ -26,6 +26,7 @@ async function main() {
       WEB_ORIGIN: "http://127.0.0.1:5173",
       SIGNUPS_ENABLED: "true",
       SIGNUP_ALLOWLIST: "",
+      AUTH_RATE_LIMIT_ENABLED: "false",
       DATA_DIR: path.resolve("test-report/canary/data"),
     };
     if (postgres) {

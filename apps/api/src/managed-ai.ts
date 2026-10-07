@@ -1,9 +1,18 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
 import type { AIProvider, AIResponse, AIUsage, ManagedAiModelClass } from "@sentrabot/adapter-kit";
 import { type ManagedAiComplexity, routeManagedAi } from "@sentrabot/core";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { createFixedWindowRateLimiter } from "./rate-limiter.js";
 
 const MAX_MANAGED_AI_INPUT_CHARACTERS = 8_000;
 const MAX_MANAGED_AI_OUTPUT_TOKENS = 2_048;
+// This route is called by an authenticated, trusted agent runtime (not an
+// end-user browser) and hits a paid model provider on every call, so the
+// limit exists to bound cost/abuse from a runaway or misbehaving caller
+// rather than to throttle normal interactive use. 60 requests/minute per IP
+// comfortably covers a busy agent loop while capping worst-case spend.
+const MANAGED_AI_RATE_LIMIT = 60;
+const MANAGED_AI_RATE_WINDOW_MS = 60_000;
 
 export interface ManagedAiActor {
   userId: string;
@@ -46,9 +55,41 @@ export interface ManagedAiRouteDependencies {
   provider: AIProvider;
 }
 
+/**
+ * Proxy headers first, then the socket address. Collapsing every caller
+ * without a proxy header into one shared bucket would let a single busy
+ * runtime lock out the rest of a directly exposed deployment, so fall back to
+ * the connection itself before giving up on identifying the caller.
+ */
+function rateLimitKey(context: Context): string {
+  const forwarded = context.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded;
+  const realIp = context.req.header("x-real-ip")?.trim();
+  if (realIp) return realIp;
+  try {
+    const address = getConnInfo(context).remote.address;
+    if (address) return address;
+  } catch {
+    // No node-server binding (unit tests, other runtimes): fall through.
+  }
+  return "unknown";
+}
+
 export function createManagedAiRoutes(dependencies: ManagedAiRouteDependencies): Hono {
   const app = new Hono();
+  const rateLimiter = createFixedWindowRateLimiter({
+    limit: MANAGED_AI_RATE_LIMIT,
+    windowMs: MANAGED_AI_RATE_WINDOW_MS,
+    now: () => dependencies.now().getTime(),
+  });
   app.post("/v1/managed-ai/responses", async (context) => {
+    const clientIp = rateLimitKey(context);
+    const rateLimit = rateLimiter.check(clientIp);
+    if (!rateLimit.allowed) {
+      return context.json({ error: "Too many managed AI requests" }, 429, {
+        "Retry-After": String(rateLimit.retryAfterSeconds),
+      });
+    }
     const actor = await dependencies.authenticate(context.req.raw);
     if (!actor) return context.json({ error: "Unauthorized" }, 401);
     const body = await context.req.json().catch(() => null);
