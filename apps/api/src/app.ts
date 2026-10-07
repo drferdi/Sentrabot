@@ -258,6 +258,8 @@ export async function createApp(
     signupAllowlist: env.signupAllowlist,
     emailSender,
     onEmailUnavailable: (reason) => console.warn(`[auth] ${reason}`),
+    // Vitest journeys signup many users from one IP; keep production limiter on.
+    rateLimitEnabled: process.env.VITEST !== "true",
     extraOrigins: [
       "sentrabot://",
       ...(env.isProduction
