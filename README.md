@@ -515,7 +515,8 @@ Production uses `backup-prod.sh` with a systemd timer, seven-day rotation, and m
 | `E2B_API_KEY` / `DAYTONA_API_KEY` / `DAYTONA_API_URL` / `DAYTONA_TARGET` / `BOX_API_KEY` / `BOX_API_URL` | Computer-provider credentials. |
 | `COMPOSIO_API_KEY` | Optional plugins / connectors. |
 | `EXPO_PUBLIC_API_URL` / `SENTRABOT_WEB_URL` | Mobile production origin and Electron web-URL override. |
-| `SMTP_URL` / `VAPID_*` | Optional email and push. |
+| `SMTP_URL` / `SMTP_FROM` | Optional SMTP for verification and password-reset email; omit and those flows stay unavailable while the API boots. |
+| `VAPID_*` | Optional web push. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `LOG_LEVEL` | Observability. |
 
 ---

@@ -1,7 +1,7 @@
 # Sentra Bot runtime architecture
 
 This document describes what the repository does today, verified against the code on
-2026-09-03. It is the single source of truth for the runtime topology; other documents link here
+2026-10-07. It is the single source of truth for the runtime topology; other documents link here
 instead of restating it. Product *requirements* (what the system must do) live in
 `docs/requirements/`. The assessment behind the 2026-09-02 topology decisions lives in
 `docs/superpowers/plans/2026-09-02-convergence-directive.md`.
@@ -91,6 +91,63 @@ persisted on Windows.
 None of these is required to run the product. Transcripts, memory, files, audit events, approval
 rules, and locally managed credentials stay in the self-hosted PostgreSQL and `DATA_DIR`.
 
+## Authentication and sessions
+
+Identity is **Better Auth** (`packages/auth/src/index.ts`), mounted at `/api/auth/*` from
+`apps/api/src/app.ts`. Sessions live in PostgreSQL through the Prisma adapter. No hosted auth
+vendor is required.
+
+| Surface | Transport | Notes |
+|---|---|---|
+| Web (Vite) | Session cookie | Proxied to the API; `organizationClient` only on the client |
+| Mobile (Expo) | `Authorization: Bearer` | Bearer value is the raw session token; the API rewrites it to a synthetic `better-auth.session_token` cookie before session resolution (`sessionHeaders` in `app.ts`) |
+| Desktop (Electron) | Same as web | Loads the web origin |
+
+**Workspace model.** Each user gets a personal organization at signup (`bootstrapUserWorkspace`).
+Multi-user team flows (create org, invite, change roles, leave) are blocked at the HTTP layer
+(`blockedAuthPaths`) and in the organization plugin (`allowUserToCreateOrganization: false`).
+Workspace isolation for RPC uses `requireMembership` and query scoping on `workspaceId`, not RBAC.
+
+**Signup policy.** `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` seed the first deployment settings;
+after initialization, the deployment owner's Settings values win (`resolveSignupPolicy` in
+`packages/db/src/signup-gate.ts`). The sign-up hook rejects closed signups and emails outside
+the allowlist.
+
+**Email and password.**
+
+- Sign-up sends a verification email when SMTP is configured (`emailVerification.sendOnSignUp`).
+  `requireEmailVerification` stays **off** so users can sign in before clicking the link; only
+  `User.emailVerified` flips when the token is consumed. Per-action gates on `emailVerified`
+  (checkout, WhatsApp pairing, connectors) are planned but **not wired yet** in the oRPC router.
+- Password reset uses `sendResetPassword`; completing reset revokes all other sessions
+  (`revokeSessionsOnPasswordReset`). The web app exposes `/reset-password` for the reset form.
+- Auth email copy is Indonesian (`packages/auth/src/auth-emails.ts`).
+
+**Transactional email.** Vendor-neutral `EmailSender` lives in `packages/adapter-kit/src/email.ts`.
+The composition root builds `SmtpEmailSender` from `SMTP_URL` and optional `SMTP_FROM`
+(`packages/adapters/src/smtp-email.ts`). When SMTP is absent, the API still boots; verification
+and reset attempt delivery through `deliverAuthEmail`, which logs via `onEmailUnavailable` and
+does not leak delivery state to the client (Better Auth already uses uniform responses for
+unknown addresses). Set `BETTER_AUTH_URL` to the **web origin** so verification and reset links
+land in the SPA, not on the API port.
+
+**Rate limiting.**
+
+- Better Auth: `rateLimit.enabled` is pinned on in production code (not only when the library
+  detects `NODE_ENV=production`). Vitest sets `VITEST=true`; operators can set
+  `AUTH_RATE_LIMIT_ENABLED=false` for debugging. Storage is in-process memory (fine for a single
+  API instance; multi-instance would need shared storage). Stricter built-in rules apply to
+  sign-in, sign-up, and password-reset paths per the library defaults.
+- Managed AI: `POST /v1/managed-ai/responses` uses a separate fixed-window limiter
+  (`apps/api/src/rate-limiter.ts`): **60 requests per minute per client IP** (proxy headers first,
+  then socket address), returning `429` with `Retry-After`. This route is for trusted runtimes
+  calling a paid provider, not browser traffic.
+
+**CORS.** `isTrustedOrigin` (`app.ts`) decides which `Origin` values receive credentialed CORS
+responses. It accepts configured public origins, exact `sentrabot://`, dev Expo origins when not
+in production, and loopback aliases of declared origins. It is **only** used for CORS — not CSRF
+or auth decisions.
+
 ## Decision log
 
 ### 2026-09-02 — `apps/api` is the harness
@@ -140,6 +197,22 @@ boundary is needed.
 - Trade-off: more approval cards for shell-heavy work on This Mac until the user adds an
   `always_allow` rule for the tool.
 - Migration consequence: none; rules are evaluated per call.
+
+### 2026-09-10 — auth email, verification, reset, and explicit rate limits
+
+- Problem: sign-up and password recovery had no email path; verification never flipped
+  `emailVerified`; auth rate limiting depended on Better Auth's production detection; managed AI
+  had no application-level throttle.
+- Decision: add `EmailSender` + SMTP adapter; enable verification on sign-up and password reset
+  with honest degradation when SMTP is unset; pin Better Auth `rateLimit.enabled`; add a
+  60/min/IP limiter on `POST /v1/managed-ai/responses`. Keep `requireEmailVerification` off;
+  defer per-action `emailVerified` gates to a follow-up router change.
+- Rejected: blocking sign-in until verified (hurts activation); hosted auth/email vendors
+  (repository policy).
+- Trade-off: unverified accounts can use the product until action-level gates exist; in-memory
+  limiters do not coordinate across multiple API replicas.
+- Migration consequence: operators who want recovery and verification must configure
+  `SMTP_URL` (and usually `SMTP_FROM`); existing sessions unchanged.
 
 ### 2026-09-04 — always_allow rules no longer apply to host execution
 
