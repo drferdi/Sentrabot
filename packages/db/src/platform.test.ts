@@ -151,7 +151,7 @@ describe("platform control-plane repositories", () => {
           entitlementState: { upsert: vi.fn() },
           outboxEvent: { create: vi.fn() },
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 
@@ -352,7 +352,7 @@ describe("platform control-plane repositories", () => {
           entitlementState: { upsert: vi.fn() },
           outboxEvent: { create: vi.fn() },
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 
@@ -377,7 +377,7 @@ describe("platform control-plane repositories", () => {
           entitlementState,
           outboxEvent,
           paymentEvent: { findUnique: vi.fn(), create: vi.fn() },
-          subscription: { upsert: vi.fn() },
+          subscription: { findUnique: vi.fn(), upsert: vi.fn() },
         }),
     };
 

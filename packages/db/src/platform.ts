@@ -597,9 +597,7 @@ interface PlatformTransaction {
     }): Promise<{ id: string }>;
   };
   subscription: {
-    findUnique(input: {
-      where: { workspaceId: string };
-    }): Promise<{ state: string } | null>;
+    findUnique(input: { where: { workspaceId: string } }): Promise<{ state: string } | null>;
     upsert(input: {
       where: { workspaceId: string };
       create: {
