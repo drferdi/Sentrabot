@@ -74,6 +74,24 @@ API_URL=https://app.example.com
 
 Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
+### Transactional auth email (verification and password reset)
+
+Verification on sign-up and password reset email links only when SMTP is configured. Without it,
+the API still starts; auth flows log `[auth] SMTP_URL is not configured…` and users cannot receive
+links until you add a relay.
+
+```env
+# smtp://user:pass@host:587 or smtps://user:pass@host:465
+SMTP_URL=smtp://user:pass@mail.example.com:587
+SMTP_FROM=noreply@example.com
+```
+
+Use a sender address your provider accepts. When `SMTP_URL` includes credentials, `SMTP_FROM`
+defaults to the URL username; set `SMTP_FROM` explicitly for credential-free relays. Keep
+`BETTER_AUTH_URL` aligned with `WEB_ORIGIN` so links open the web app (`/reset-password` for
+resets). Copy and subjects are Indonesian (`packages/auth/src/auth-emails.ts`). Details:
+[architecture.md — Authentication and sessions](architecture.md#authentication-and-sessions).
+
 Optional:
 
 ```env

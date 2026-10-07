@@ -18,7 +18,7 @@ Public product copy lives in `apps/docs` (Mintlify) and `apps/site`. Implementat
 
 | Document | Role |
 | --- | --- |
-| [architecture.md](architecture.md) | Runtime topology and decision log. Single source of truth for *how the system is wired today*. |
+| [architecture.md](architecture.md) | Runtime topology, auth/sessions, and decision log. Single source of truth for *how the system is wired today*. |
 | [requirements/](requirements/) | ISO/IEC/IEEE 29148 requirements package. Single source of truth for *what the product must do*. |
 | [self-host.md](self-host.md) | Operator runbook for local, Compose, published images, and production. |
 | [computer-runtime.md](computer-runtime.md) | Sandbox provider contract and workspace durability. |
@@ -43,4 +43,4 @@ Public product copy lives in `apps/docs` (Mintlify) and `apps/site`. Implementat
 
 ## Verification date
 
-This map was reconciled against the repository on **2026-09-03**.
+This map was reconciled against the repository on **2026-10-07**.

@@ -1,6 +1,6 @@
 # Sentrabot — Audit Produk & Rancangan User Journey End-to-End
 
-Tanggal: 2026-09-10 · Status: audit **+ implementasi Fase A** (branch `feat/auth-foundation`, belum di-commit)
+Tanggal: 2026-09-10 · Status: audit **+ implementasi Fase A** (branch `feat/auth-foundation`). **As-built auth** (SMTP, verification, reset, rate limits) is maintained in [`docs/architecture.md`](../architecture.md#authentication-and-sessions); this file keeps the audit narrative and gap analysis.
 Metode: pembacaan langsung codebase. Setiap klaim disertai `file:line`. Yang tidak terbukti ditandai **NOT VERIFIED**.
 
 §1–§10 adalah audit terhadap kondisi **sebelum** implementasi. **§11 mencatat apa yang sudah dibangun** — baca itu lebih dulu bila Anda hanya butuh status terkini.
