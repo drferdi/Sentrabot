@@ -76,6 +76,7 @@ async function main() {
     process.env.DATA_DIR = path.join(reportDir, "data");
     process.env.SIGNUPS_ENABLED = "true";
     process.env.SIGNUP_ALLOWLIST = "";
+    process.env.AUTH_RATE_LIMIT_ENABLED = "false";
     process.env.CI = "1";
 
     execSync("pnpm --filter @sentrabot/db generate", { stdio: "inherit", env: process.env });
