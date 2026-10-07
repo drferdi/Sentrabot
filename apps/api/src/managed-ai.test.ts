@@ -96,4 +96,67 @@ describe("managed AI gateway", () => {
       expect.objectContaining({ reservationId: "reservation-1" }),
     );
   });
+
+  it("throttles a caller that floods the route, before spending on the provider", async () => {
+    const { createManagedAiRoutes } = await import("./managed-ai.js");
+    const authenticate = vi.fn().mockResolvedValue(null);
+    const app = createManagedAiRoutes({
+      authenticate,
+      isTrustedRuntime: async () => true,
+      getBudgetRatio: async () => 0.1,
+      reserveUsage: async () => ({ reservationId: "reservation-1" }),
+      finalizeUsage: async () => undefined,
+      releaseUsage: async () => undefined,
+      estimateCostMicros: () => 100n,
+      calculateActualCostMicros: () => 42n,
+      providerId: "openai",
+      priceVersion: "test",
+      now: () => new Date("2026-09-02T00:00:00.000Z"),
+      provider: {
+        generate: async () => ({
+          outputText: "private response",
+          usage: { inputTokens: 3, outputTokens: 5 },
+        }),
+        stream: async function* () {},
+      },
+    });
+
+    const flood = () =>
+      app.request("/v1/managed-ai/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.7" },
+        body: JSON.stringify({
+          deviceId: "device-1",
+          runtimeId: "runtime-1",
+          idempotencyKey: "request-1",
+          complexity: "simple",
+          input: "private prompt",
+        }),
+      });
+
+    // Unauthenticated, so every allowed call stops at 401 rather than 429.
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      expect((await flood()).status).toBe(401);
+    }
+
+    const throttled = await flood();
+    expect(throttled.status).toBe(429);
+    expect(throttled.headers.get("Retry-After")).toBe("60");
+    // The limiter runs before authentication, so the flood never reached it again.
+    expect(authenticate).toHaveBeenCalledTimes(60);
+
+    // A different caller keeps its own budget.
+    const other = await app.request("/v1/managed-ai/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.8" },
+      body: JSON.stringify({
+        deviceId: "device-1",
+        runtimeId: "runtime-1",
+        idempotencyKey: "request-1",
+        complexity: "simple",
+        input: "private prompt",
+      }),
+    });
+    expect(other.status).toBe(401);
+  });
 });

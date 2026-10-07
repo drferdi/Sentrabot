@@ -32,6 +32,7 @@ async function main() {
     DATA_DIR: dataDir,
     SIGNUPS_ENABLED: "true",
     SIGNUP_ALLOWLIST: "",
+    AUTH_RATE_LIMIT_ENABLED: "false",
   };
   try {
     execFileSync("pnpm", ["--filter", "@sentrabot/db", "generate"], {

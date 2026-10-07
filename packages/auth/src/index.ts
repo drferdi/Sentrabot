@@ -1,9 +1,11 @@
-import { emailAllowed, parseAllowlist, signupPolicyFromEnv } from "@sentrabot/core";
-import { bootstrapUserWorkspace, type PrismaClient } from "@sentrabot/db";
+import type { EmailSender } from "@sentrabot/adapter-kit";
+import { emailAllowed } from "@sentrabot/core";
+import { bootstrapUserWorkspace, type PrismaClient, resolveSignupPolicy } from "@sentrabot/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
+import { deliverAuthEmail, passwordResetEmail, verificationEmail } from "./auth-emails.js";
 
 export interface AuthEnv {
   secret: string;
@@ -13,24 +15,27 @@ export interface AuthEnv {
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /**
+   * Defaults to enabled. Better-auth only turns its own rate limiter on when
+   * it detects `NODE_ENV=production`; this repo already pins NODE_ENV so a
+   * developer .env can't demote the stack (see 13fba6e), so leave this
+   * pinned on too rather than trusting that detection a second time. Only
+   * tests should ever pass `false`.
+   */
+  rateLimitEnabled?: boolean;
+  /**
+   * Transactional auth email. Absent on a deployment that configured no SMTP_URL, so every
+   * flow that needs it must degrade instead of throwing: the API still has to boot.
+   */
+  emailSender?: EmailSender;
+  /**
+   * Called when an auth email could not be sent, so a deployment can see the gap in its logs
+   * rather than wondering why nobody receives anything.
+   */
+  onEmailUnavailable?: (reason: string) => void;
 }
 
-export async function resolveSignupPolicy(
-  prisma: Pick<PrismaClient, "deploymentSettings">,
-  env: Pick<AuthEnv, "signupsEnabled" | "signupAllowlist">,
-): Promise<{ enabled: boolean; allowlist: string[] }> {
-  const settings = await prisma.deploymentSettings.findUnique({
-    where: { id: "default" },
-    select: { signupsEnabled: true, signupAllowlist: true, signupPolicyInitialized: true },
-  });
-  if (settings?.signupPolicyInitialized) {
-    return {
-      enabled: settings.signupsEnabled,
-      allowlist: parseAllowlist(settings.signupAllowlist),
-    };
-  }
-  return signupPolicyFromEnv(env);
-}
+export { resolveSignupPolicy } from "@sentrabot/db";
 
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   return betterAuth({
@@ -39,8 +44,35 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     baseURL: env.baseURL,
     trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
     database: prismaAdapter(prisma, { provider: "postgresql" }),
+    // Window/max/customRules use better-auth's defaults (including the
+    // stricter built-in sign-in/sign-up rules); only `enabled` is pinned so
+    // protection doesn't silently depend on better-auth's own `isProduction`
+    // detection. `storage: "memory"` (the default) is correct for a
+    // single-instance self-host; a multi-instance deployment would need
+    // `secondaryStorage` so counters are shared across processes.
+    rateLimit: { enabled: env.rateLimitEnabled ?? true },
+    emailVerification: {
+      sendOnSignUp: true,
+      // Deliberately NOT paired with `requireEmailVerification`: blocking sign-in before the
+      // first click would cost more activation than an unverified account costs us. Risky
+      // actions gate on `emailVerified` individually instead.
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        await deliverAuthEmail(env.emailSender, user.email, verificationEmail(url), (reason) =>
+          env.onEmailUnavailable?.(reason),
+        );
+      },
+    },
     emailAndPassword: {
       enabled: true,
+      // Every session dies with the old password: a reset is the recovery path for an account
+      // the user may have lost control of, so leaving other devices signed in would defeat it.
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        await deliverAuthEmail(env.emailSender, user.email, passwordResetEmail(url), (reason) =>
+          env.onEmailUnavailable?.(reason),
+        );
+      },
       // Signup policy is mutable deployment state, so the request hook below
       // enforces it instead of freezing an environment value at process start.
       disableSignUp: false,
@@ -85,6 +117,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       organization({
         allowUserToCreateOrganization: false,
         creatorRole: "owner",
+        // Deliberately redundant with blockedAuthPaths: that is path matching, this is the plugin refusing the operation.
+        disableOrganizationDeletion: true,
       }),
     ],
     hooks: {
@@ -93,14 +127,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (!path.includes("sign-up")) return;
         const policy = await resolveSignupPolicy(prisma, env);
         if (!policy.enabled) {
-          throw new APIError("BAD_REQUEST", { message: "Registration is closed" });
+          throw new APIError("BAD_REQUEST", { message: "Pendaftaran ditutup" });
         }
         const email =
           typeof ctx.body === "object" && ctx.body && "email" in ctx.body
             ? String((ctx.body as { email?: string }).email ?? "")
             : "";
         if (email && !emailAllowed(email, policy.allowlist)) {
-          throw new APIError("BAD_REQUEST", { message: "Email is not allowed to register" });
+          throw new APIError("BAD_REQUEST", { message: "Email ini tidak diizinkan mendaftar" });
         }
       },
     },
@@ -125,4 +159,7 @@ export const blockedAuthPaths = [
   "/organization/reject-invitation",
   "/organization/remove-member",
   "/organization/update-member-role",
+  "/organization/delete",
+  "/organization/leave",
+  "/organization/update",
 ];
