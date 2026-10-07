@@ -69,9 +69,13 @@ terisolasi, bukan langsung di sistem Anda.
 
 ## Kontak
 
-**[ISI: nama badan hukum, alamat, surel umum, dan tautan ke kanal resmi.]**
+**Pengendali:** PT Adianda Putri Iskandar  
+**Program:** Sentra Artificial Intelligence  
+**Situs:** [sentrahai.com](https://sentrahai.com)
 
-Situs: [sentrahai.com](https://sentrahai.com)
+Alamat terdaftar dan surel privasi khusus belum dipublikasikan di repositori ini. Jangan mengisi alamat atau surel fiktif pada halaman pelanggan.
+
+Dukungan produk: lihat `SUPPORT.md` di akar repositori.
 
 ---
 
@@ -82,7 +86,7 @@ Dokumen ini disusun dari bukti di dalam repositori. Bagian yang **terverifikasi 
 | Klaim | Bukti |
 |---|---|
 | Data lokal & terenkripsi | `packages/db/prisma/schema.prisma` (48 model), `ENCRYPTION_KEY`, model `Secret` |
-| Izin ditegakkan di lapisan sistem | `packages/bot-templates/source/core/30_APPROVAL_POLICY.md` |
+| Izin ditegakkan di lapisan sistem | `packages/bot-templates/core/30_APPROVAL_POLICY.md` |
 | Jejak tindakan keluar tercatat | model `ExternalEffect`, `ActionApprovalRule` |
 | Sandbox | `infra/sandboxes/`, dukungan Docker / E2B / Daytona |
 | WhatsApp | `WHATSAPP_*` di `.env.example`, termasuk `WHATSAPP_TEMPLATE_LANGUAGE=id` |
@@ -91,13 +95,10 @@ Dokumen ini disusun dari bukti di dalam repositori. Bagian yang **terverifikasi 
 
 ### Yang TIDAK terverifikasi — perlu keputusan sebelum dipakai publik
 
-**1. Kesembilan bot Indonesia tidak ada di repositori ini.**
-Halaman pemasaran menyebut sembilan bot — Sentra Study, Work, Rumah, Uang, UMKM, Warga, Aman,
-Creator, Care — dengan total 37 berkas. Yang ada di `packages/bot-templates` adalah **sekitar
-50 template korporat** dengan struktur berbeda: `customer-success`, `growth-marketing`,
-`treasury`, `internal-audit`, `legal-affairs`, `privacy-data-governance`,
-`clinical-operations`, dan seterusnya. Masing-masing berisi `ROLE.md`, `template.json`, dan
-`evals.json` — **bukan** `SYSTEM_PROMPT.md` dan `manifest.json` seperti yang diklaim halaman.
+**1. Katalog bot yang di-ship di repositori ini adalah 66 paket peran**
+di `packages/bot-templates` (lihat `CATALOG.md`), bukan sembilan bot konsumen
+(Sentra Study, Work, Rumah, Uang, UMKM, Warga, Aman, Creator, Care) yang disebut
+halaman pemasaran. Klaim "9 bot production-ready" **bukan** fakta repositori ini.
 
 Artinya salah satu dari tiga hal berikut benar, dan Chief perlu memastikan yang mana:
 - kesembilan bot itu ada di repositori lain yang belum disambungkan ke sesi ini;

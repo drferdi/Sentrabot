@@ -1,5 +1,11 @@
 # CLAUDE CODE — SENTRABOT CONVERGENCE DIRECTIVE
 
+> **Superseded as an engineering baseline (2026-09-03).**  
+> Use [`docs/architecture.md`](../architecture.md) for as-built topology and  
+> [`docs/requirements/`](../requirements/) for ISO/IEC/IEEE 29148 requirements.  
+> Namespace `@sentrabot/*` is canonical; `@rakazo/*` does not exist in this repository.  
+> This file is retained as historical planning notes only.
+
 ## Mission
 
 You are working on **SentraBot**, a local-first, self-hosted, persistent multi-agent platform.

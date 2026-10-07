@@ -1,8 +1,17 @@
 * text=auto eol=lf
-
 *.sh text eol=lf
 infra/sandboxes/computer/sentrabot-browser text eol=lf
 infra/sandboxes/computer/fluxbox.* text eol=lf
-*.png binary
-*.jpg binary
-*.ico binary
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
+
+# Marketing site deploy assets must be regular git blobs. Vercel only pulls
+# LFS when the project Git LFS toggle is on; otherwise pointer files (~130B)
+# ship as broken PNGs and the site layout collapses.
+apps/site/public/**/*.png filter= diff= merge= -text
+apps/site/public/**/*.jpg filter= diff= merge= -text
+apps/site/public/**/*.ico filter= diff= merge= -text
+apps/site/src/**/*.png filter= diff= merge= -text
+apps/site/src/**/*.jpg filter= diff= merge= -text
+apps/site/src/**/*.ico filter= diff= merge= -text

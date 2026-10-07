@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Model picker includes Grok 4.6 (xAI) and Ox Alpha Free / GLM-5.3 (OpenCode Go).
+- Documentation: ISO/IEC/IEEE 29148 requirements package under `docs/requirements/`; README, architecture, and contributor files aligned to `@sentrabot/*` and the as-built surfaces.
 
 ### Added
 

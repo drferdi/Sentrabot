@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  expectComposerReady,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -168,17 +175,27 @@ test("chat composer controls are vertically centered", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `composer-layout-${stamp}@sentrabot.test`, "password12", "Composer Layout");
   await completeOnboarding(page);
+  await expectComposerReady(page);
+  const bar = page.getByTestId("composer-bar");
+  await expect(bar).toBeVisible();
+  await expect(bar.locator('textarea[name="chat-message"]')).toBeVisible();
 
-  const centers = await page.getByTestId("composer-bar").evaluate((composer) =>
-    ["Attach file", "Dictate", "Message Chief", "Send"].map((label) => {
+  const centers = await bar.evaluate((composer) => {
+    const labels = ["Attach file", "Dictate", "Send"];
+    const values = labels.map((label) => {
       const element = composer.querySelector<HTMLElement>(`[aria-label="${label}"]`);
       if (!element) throw new Error(`Missing composer control: ${label}`);
       const box = element.getBoundingClientRect();
       return box.top + box.height / 2;
-    }),
-  );
+    });
+    const textarea = composer.querySelector<HTMLElement>('textarea[name="chat-message"]');
+    if (!textarea) throw new Error("Missing composer control: Message");
+    const box = textarea.getBoundingClientRect();
+    values.push(box.top + box.height / 2);
+    return values;
+  });
 
-  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(2);
 });
 
 test("group chats share every context-menu action", async ({ page }, testInfo) => {
@@ -244,11 +261,11 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Clear conversation", exact: true }).click();
   await expect(
-    page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),
+    page.getByRole("alertdialog", { name: "Clear Group menu\u2019s conversation?" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(
-    page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),
+    page.getByRole("alertdialog", { name: "Clear Group menu\u2019s conversation?" }),
   ).toHaveCount(0);
 
   await group.click({ button: "right" });

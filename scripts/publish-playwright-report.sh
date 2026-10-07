@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
-: "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+  echo "::notice::Skipping Playwright visual report publish; S3 credentials are not configured."
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'latest_pr_run=false\n' >> "$GITHUB_OUTPUT"
+    printf 'stable_screenshots_url=\n' >> "$GITHUB_OUTPUT"
+  fi
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '%s\n' "Playwright visual report publish skipped because S3 credentials are not configured." >> "$GITHUB_STEP_SUMMARY"
+  fi
+  exit 0
+fi
+
 : "${S3_BUCKET:?S3_BUCKET is required}"
 : "${S3_ENDPOINT:?S3_ENDPOINT is required}"
 : "${PLAYWRIGHT_PUBLIC_BASE_URL:?PLAYWRIGHT_PUBLIC_BASE_URL is required}"

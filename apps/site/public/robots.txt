@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /404.html
+Disallow: /analytics.json
 
-Sitemap: https://sentrahai.com/sitemap.xml
+Sitemap: https://bot.sentrahai.com/sitemap.xml

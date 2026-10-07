@@ -30,7 +30,7 @@ pnpm dev
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
-CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
+CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR. After those jobs on `main` or a PR, `publish Playwright report` uploads the screenshot gallery when `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are set; otherwise that workflow skips and stays green.
 
 ## Secrets and configuration
 
@@ -39,6 +39,8 @@ CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload
 - Use placeholders in examples (`your-openrouter-key`, etc.).
 
 The product path is **Pi + Docker + Graphile**. Emulator settings (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) are for tests only.
+
+Engineering requirements: [docs/requirements/](docs/requirements/). Runtime topology: [docs/architecture.md](docs/architecture.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 **Integrations** can use [Composio](https://composio.dev/) or Pipedream Connect as optional managed
 app catalogs. Users can also install HTTPS MCP servers (including Treg) and bounded OpenAPI tool
@@ -58,4 +60,5 @@ capability config, fixtures, logs, or snapshots; use the encrypted secret store 
 | --- | --- |
 | [security@sentrabot.com](mailto:security@sentrabot.com) | Vulnerabilities only — see [SECURITY.md](SECURITY.md) |
 | [support@sentrabot.com](mailto:support@sentrabot.com) | User and support questions |
-| [elie@sentrabot.com](mailto:elie@sentrabot.com) | Maintainer |
+| [GitHub issues](https://github.com/drferdii/sentrabot/issues) | Product bugs and self-host reports (use the templates) |
+| [sentrahai.com](https://sentrahai.com) | Programme and public site |

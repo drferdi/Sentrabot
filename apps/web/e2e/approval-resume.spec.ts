@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  expectVisibleAfterRealtime,
+  sendComposer,
+  signup,
+  waitForRunStatus,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -8,12 +15,11 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await signup(page, `approval-${stamp}@sentrabot.test`, "password12", "Approval");
   await completeOnboarding(page);
 
-  const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("ask me which city to use");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "ask me which city to use");
+  await waitForRunStatus(page, "waiting_input");
 
   const prompt = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
-  await expect(prompt).toBeVisible({ timeout: 30_000 });
+  await expectVisibleAfterRealtime(page, prompt.first());
   await expect(page.getByText("Reply with one city name.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send it" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit first" })).toBeVisible();
@@ -26,6 +32,7 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "21-approval-custom-answer");
   await page.getByRole("button", { name: "Send answer" }).click();
 
+  await waitForRunStatus(page, "waiting_input");
   await expect(prompt).toHaveCount(2, { timeout: 30_000 });
   await expect(
     page.getByText("Answered: ask me which city to use again", { exact: true }),
@@ -42,7 +49,7 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
     "on it. i will work this in the background and come back with a result.",
     { exact: true },
   );
-  await expect(resumed).toBeVisible({ timeout: 30_000 });
+  await expectVisibleAfterRealtime(page, resumed);
   const handledAnswer = page.getByText("done. i handled: Paris", { exact: true });
   await expect(handledAnswer).toBeVisible();
   await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
@@ -53,8 +60,8 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "24-approval-resumed-after-reload");
 
-  await composer.fill("ask me which city to use");
-  await page.keyboard.press("Enter");
+  await sendComposer(page, "ask me which city to use");
+  await waitForRunStatus(page, "waiting_input");
   await expect(prompt).toHaveCount(3, { timeout: 30_000 });
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.getByText("No longer active", { exact: true })).toBeVisible();

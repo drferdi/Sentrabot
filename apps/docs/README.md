@@ -45,6 +45,8 @@ Isi `docs/` berikut **tidak** dimasukkan karena bersifat internal. Jangan menamb
 | `docs/plans/*` | Spesifikasi MVP internal |
 | `docs/2026-agent-best-practices-brief.md` | Brief internal |
 | `docs/mobile-release.md` | Proses rilis internal |
+| `docs/requirements/*` | Paket persyaratan ISO/IEC/IEEE 29148 (internal) |
+| `docs/architecture.md` | Topologi runtime (internal; ringkasan operator ada di halaman pasang) |
 
 `docs/product/paket-free-batas-v1.md` **tidak** disalin utuh — halaman `mulai/paket.mdx` hanya
 mengambil bagian yang layak publik. Target COGS internal (Rp4.000/user/bulan), catatan pajak,
