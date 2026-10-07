@@ -892,7 +892,6 @@ async function executeRunAttempt({
         displayName: row.displayName,
         providerRef: row.providerRef ?? undefined,
       })),
-      connectedProviders: connectedComposio.map((row) => row.provider),
     };
     const memoryScope = configuredMemory
       ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
