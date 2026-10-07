@@ -6,8 +6,6 @@ import type {
   MessagingGroup,
   MessagingGroupRequest,
   MessagingInboundEvent,
-  MessagingInboundMessage,
-  MessagingOutboundStatus,
   MessagingProvider,
   MessagingSendResult,
   MessagingTypingRequest,
@@ -60,13 +58,6 @@ export function isPhoneSurfaceEnabled(
 ): boolean {
   return isSendBlueEnabled(config) && Boolean(deploymentModelKey);
 }
-
-/** @deprecated Prefer MessagingInboundEvent from adapter-kit. */
-export type SendBlueInboundEvent = MessagingInboundEvent;
-/** @deprecated Prefer MessagingInboundMessage from adapter-kit. */
-export type SendBlueInboundMessage = MessagingInboundMessage;
-/** @deprecated Prefer MessagingOutboundStatus from adapter-kit. */
-export type SendBlueOutboundStatus = MessagingOutboundStatus;
 
 /** Normalize a SendBlue webhook payload into provider-neutral inbound events. */
 export function parseSendBlueInbound(payload: unknown): MessagingInboundEvent | null {

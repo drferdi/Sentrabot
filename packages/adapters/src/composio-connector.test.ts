@@ -5,7 +5,7 @@ import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  CompositeConnector,
+  ConnectorRegistry,
   collectLogIds,
   collectPages,
   executeSessionKey,
@@ -153,7 +153,7 @@ describe("composio tool mapping", () => {
         yield { type: "result", data: { provider: "composio" } } as ConnectorEvent;
       },
     } as never;
-    const connector = new CompositeConnector(destination, [composio]);
+    const connector = new ConnectorRegistry(destination, [composio]);
     const context = { userId: "u" } as AdapterContext;
     for await (const event of connector.execute(
       {
@@ -177,7 +177,7 @@ describe("composio tool mapping", () => {
       },
       execute: async function* () {},
     } as never;
-    const connector = new CompositeConnector(destination, [failing]);
+    const connector = new ConnectorRegistry(destination, [failing]);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {

@@ -455,9 +455,6 @@ export class ConnectorRegistry implements ConnectorProvider {
   }
 }
 
-/** @deprecated Use ConnectorRegistry. */
-export const CompositeConnector = ConnectorRegistry;
-
 function isManagedConnectorProvider(
   provider: ConnectorProvider,
 ): provider is ManagedConnectorProvider {
@@ -476,9 +473,7 @@ function connectedComposioExternalIds(context: AdapterContext): string[] {
   return (
     context.connectedConnections
       ?.filter((connection) => connection.connectorId === "composio")
-      .map((connection) => connection.externalId) ??
-    context.connectedProviders ??
-    []
+      .map((connection) => connection.externalId) ?? []
   );
 }
 
