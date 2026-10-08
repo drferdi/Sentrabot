@@ -17,7 +17,10 @@ describe("platform control-plane repositories", () => {
       $transaction: async (operation: (tx: any) => Promise<void>) =>
         operation({
           runtimeLease: { findUnique: vi.fn(), upsert: vi.fn() },
-          entitlementState: { upsert: vi.fn() },
+          entitlementState: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            upsert: vi.fn(),
+          },
           outboxEvent,
           paymentEvent,
           subscription,
@@ -40,6 +43,73 @@ describe("platform control-plane repositories", () => {
     );
   });
 
+  it("rejects checkout when the workspace already has active_plus", async () => {
+    const { beginCheckout, ActiveSubscriptionCheckoutError } = await import("./platform.js");
+    const upsert = vi.fn();
+    const db = {
+      $transaction: async (operation: (tx: any) => Promise<void>) =>
+        operation({
+          subscription: {
+            findUnique: vi.fn().mockResolvedValue({ state: "active_plus" }),
+            upsert,
+          },
+        }),
+    };
+
+    await expect(
+      beginCheckout(db as any, {
+        userId: "user-1",
+        workspaceId: "workspace-1",
+        provider: "xendit",
+        providerReference: "checkout-2",
+      }),
+    ).rejects.toBeInstanceOf(ActiveSubscriptionCheckoutError);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("does not demote a paying customer when a duplicate checkout session expires", async () => {
+    const { applyVerifiedPaymentEvent } = await import("./platform.js");
+    const paymentEvent = {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "payment-event-1" }),
+    };
+    const subscription = {
+      findUnique: vi.fn().mockResolvedValue({ state: "checkout_pending" }),
+      upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
+    };
+    const entitlementState = {
+      findUnique: vi.fn().mockResolvedValue({ state: "active_plus" }),
+      upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }),
+    };
+    const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
+    const db = {
+      $transaction: async (operation: (tx: any) => Promise<void>) =>
+        operation({
+          runtimeLease: { findUnique: vi.fn(), upsert: vi.fn() },
+          entitlementState,
+          outboxEvent,
+          paymentEvent,
+          subscription,
+        }),
+    };
+
+    await applyVerifiedPaymentEvent(db as any, {
+      provider: "xendit",
+      providerEventId: "session-expired-duplicate",
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      lifecycle: "renewal_failed",
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    });
+
+    expect(subscription.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ planCode: "plus", state: "active_plus" }),
+      }),
+    );
+    expect(entitlementState.upsert).not.toHaveBeenCalled();
+  });
+
   it("reverts an abandoned checkout to free instead of entering grace period", async () => {
     const { applyVerifiedPaymentEvent } = await import("./platform.js");
     const paymentEvent = {
@@ -50,7 +120,10 @@ describe("platform control-plane repositories", () => {
       findUnique: vi.fn().mockResolvedValue({ state: "checkout_pending" }),
       upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
     };
-    const entitlementState = { upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }) };
+    const entitlementState = {
+      findUnique: vi.fn().mockResolvedValue({ state: "free" }),
+      upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }),
+    };
     const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
     const db = {
       $transaction: async (operation: (tx: any) => Promise<void>) =>
@@ -94,7 +167,10 @@ describe("platform control-plane repositories", () => {
       findUnique: vi.fn().mockResolvedValue({ state: "active_plus" }),
       upsert: vi.fn().mockResolvedValue({ id: "subscription-1" }),
     };
-    const entitlementState = { upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }) };
+    const entitlementState = {
+      findUnique: vi.fn().mockResolvedValue({ state: "active_plus" }),
+      upsert: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }),
+    };
     const outboxEvent = { create: vi.fn().mockResolvedValue({ id: "outbox-1" }) };
     const db = {
       $transaction: async (operation: (tx: any) => Promise<void>) =>
