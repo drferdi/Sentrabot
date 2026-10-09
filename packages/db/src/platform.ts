@@ -524,6 +524,11 @@ export async function tombstoneEncryptedSyncObject(
 }
 
 export async function findPaymentTargetByProviderReference(db: Db, providerReference: string) {
+  const session = await db.billingCheckoutSession.findUnique({
+    where: { providerReference },
+    select: { userId: true, workspaceId: true },
+  });
+  if (session) return session;
   return db.subscription.findUnique({
     where: { providerReference },
     select: { userId: true, workspaceId: true },
@@ -534,24 +539,33 @@ export async function beginCheckout(
   db: Db,
   input: { userId: string; workspaceId: string; provider: string; providerReference: string },
 ): Promise<void> {
-  await db.subscription.upsert({
-    where: { workspaceId: input.workspaceId },
-    create: {
-      userId: input.userId,
-      workspaceId: input.workspaceId,
-      planCode: "plus",
-      state: "checkout_pending",
-      provider: input.provider,
-      providerReference: input.providerReference,
-    },
-    update: {
-      planCode: "plus",
-      state: "checkout_pending",
-      provider: input.provider,
-      providerReference: input.providerReference,
-      graceEndsAt: null,
-    },
-  });
+  await db.$transaction([
+    db.billingCheckoutSession.create({
+      data: {
+        providerReference: input.providerReference,
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+      },
+    }),
+    db.subscription.upsert({
+      where: { workspaceId: input.workspaceId },
+      create: {
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+        planCode: "plus",
+        state: "checkout_pending",
+        provider: input.provider,
+        providerReference: input.providerReference,
+      },
+      update: {
+        planCode: "plus",
+        state: "checkout_pending",
+        provider: input.provider,
+        providerReference: input.providerReference,
+        graceEndsAt: null,
+      },
+    }),
+  ]);
 }
 
 interface PlatformTransaction {
