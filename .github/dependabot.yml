@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm_and_yarn:
+        patterns:
+          - "*"
+    ignore:
+      # No patched release on npm; tracked via pnpm audit / manual review.
+      - dependency-name: braces
+      - dependency-name: node-forge
+      - dependency-name: sprintf-js
