@@ -31,15 +31,15 @@
   },
   "dependencies": {
     "@sentrabot/contracts": "workspace:*",
-    "dotenv": "^17.2.1",
+    "dotenv": "^18.0.6",
     "@observablehq/plot": "^0.6.17",
     "d3-dsv": "^3.0.1",
     "croner": "^10.0.1"
   },
   "devDependencies": {
-    "fast-check": "^4.3.0",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10",
+    "fast-check": "^4.10.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
     "@types/d3-dsv": "^3.0.7"
   }
 }
