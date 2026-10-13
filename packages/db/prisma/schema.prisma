@@ -29,6 +29,7 @@ model User {
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   devices          Device[]
   subscriptions    Subscription[]
+  billingCheckoutSessions BillingCheckoutSession[]
   paymentEvents    PaymentEvent[]
   usageReservations UsageReservation[]
   usageLedger       UsageLedger[]
@@ -125,6 +126,7 @@ model Organization {
   runtimes    Runtime[]
   keyEnvelopes KeyEnvelope[]
   subscriptions Subscription[]
+  billingCheckoutSessions BillingCheckoutSession[]
   paymentEvents  PaymentEvent[]
   usageReservations UsageReservation[]
   usageLedger       UsageLedger[]
@@ -200,6 +202,19 @@ model Subscription {
 
   @@index([userId, state])
   @@map("subscriptions")
+}
+
+/// Immutable lookup from Xendit reference_id to workspace for every checkout started.
+model BillingCheckoutSession {
+  providerReference String       @id @map("provider_reference")
+  userId            String       @map("user_id")
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId       String       @map("workspace_id")
+  workspace         Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@index([workspaceId, createdAt])
+  @@map("billing_checkout_sessions")
 }
 
 model PaymentEvent {

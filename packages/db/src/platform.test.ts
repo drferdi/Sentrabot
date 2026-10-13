@@ -473,4 +473,54 @@ describe("platform control-plane repositories", () => {
       data: { status: "released", finalizedAt: new Date("2026-09-02T00:00:00.000Z") },
     });
   });
+
+  it("resolves payment targets for superseded checkout references", async () => {
+    const { findPaymentTargetByProviderReference } = await import("./platform.js");
+    const findUniqueSession = vi.fn().mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    const subscriptionFindUnique = vi.fn();
+    const db = {
+      billingCheckoutSession: { findUnique: findUniqueSession },
+      subscription: { findUnique: subscriptionFindUnique },
+    };
+
+    await expect(findPaymentTargetByProviderReference(db as any, "checkout-old")).resolves.toEqual({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    expect(subscriptionFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("records every checkout reference when a workspace starts a new session", async () => {
+    const { beginCheckout } = await import("./platform.js");
+    const createSession = vi.fn().mockResolvedValue(undefined);
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      $transaction: async (steps: unknown[]) => {
+        for (const step of steps) {
+          if (typeof step === "object" && step !== null && "then" in step) await step;
+        }
+      },
+      billingCheckoutSession: { create: createSession },
+      subscription: { upsert },
+    };
+
+    await beginCheckout(db as any, {
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      provider: "xendit",
+      providerReference: "checkout-2",
+    });
+
+    expect(createSession).toHaveBeenCalledWith({
+      data: {
+        providerReference: "checkout-2",
+        userId: "user-1",
+        workspaceId: "workspace-1",
+      },
+    });
+    expect(upsert).toHaveBeenCalledOnce();
+  });
 });
