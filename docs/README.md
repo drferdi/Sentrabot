@@ -43,4 +43,4 @@ Public product copy lives in `apps/docs` (Mintlify) and `apps/site`. Implementat
 
 ## Verification date
 
-This map was reconciled against the repository on **2026-09-03**.
+This map was reconciled against the repository on **2026-10-09**.

@@ -74,6 +74,35 @@ API_URL=https://app.example.com
 
 Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
+### Transactional email (verification and password reset)
+
+Sign-up can send a verification link and the sign-in page can request a password reset. Both require
+outbound SMTP. Without it the API still starts; auth endpoints respond normally and the UI shows
+honest "belum tersedia" style messaging, while the API logs warnings such as
+`[auth] SMTP_URL is not configured; auth email was not sent`.
+
+```env
+# smtp://user:pass@host:587 or smtps://user:pass@host:465
+SMTP_URL=smtp://bot:secret@mail.example.com:587
+SMTP_FROM=no-reply@example.com
+```
+
+`SMTP_FROM` defaults to the user in `SMTP_URL` when credentials are embedded. Use a relay that
+allows that sender. Links expire in about one hour (Better Auth defaults). Email copy is
+Indonesian (`packages/auth/src/auth-emails.ts`).
+
+**Troubleshooting**
+
+| Symptom | Check |
+| --- | --- |
+| No verification mail after sign-up | `SMTP_URL` set in the **API/worker** environment (Compose: `.env` loaded by both services); API logs for `[auth]` delivery errors |
+| Reset request succeeds but no mail | Same as above; confirm firewall egress to the SMTP port |
+| Auth works locally but CORS fails on HTTPS | `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` must match the browser's public origin exactly |
+| Mobile cannot sign in against production | Mobile sends `Origin: sentrabot://`; production trusts only that exact scheme, not suffixed variants |
+
+Login is **not** blocked when `emailVerified` is false; treat verified email as a trust signal for
+future gated actions, not as a hard gate today.
+
 Optional:
 
 ```env

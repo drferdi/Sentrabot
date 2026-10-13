@@ -1,7 +1,7 @@
 # Sentra Bot runtime architecture
 
 This document describes what the repository does today, verified against the code on
-2026-09-03. It is the single source of truth for the runtime topology; other documents link here
+2026-10-09. It is the single source of truth for the runtime topology; other documents link here
 instead of restating it. Product *requirements* (what the system must do) live in
 `docs/requirements/`. The assessment behind the 2026-09-02 topology decisions lives in
 `docs/superpowers/plans/2026-09-02-convergence-directive.md`.
@@ -47,6 +47,44 @@ packages/bot-templates (66 role packages), infra/updater (Compose sidecar).
 | Sandbox lifecycle | `SandboxProvider` adapters (`packages/adapters/src/sandbox-factory.ts`); Docker computers through `infra/sandboxes/supervisor` (bearer token, loopback by default). Computer state and control/execution leases live in `computers` and `computer_execution_leases`. |
 | Background jobs | `packages/adapter-kit/src/background-jobs.ts`. Every job carries a `jobKey`, so redelivery replaces instead of duplicating. The reconciler re-enqueues queued runs, expired leases, near-due routines, and expired control leases. When a worker dies holding a job, the reconciler's keyed re-enqueue makes Graphile (0.17) mark the locked row permanently failed and insert a fresh one, so a new worker picks the work up within its poll interval; recovery never waits for Graphile's 4-hour stale-lock window (`packages/adapters/src/graphile-restart.postgres.test.ts`). |
 | Durable state | PostgreSQL via Prisma (`packages/db/prisma/schema.prisma`); files under `DATA_DIR`; secrets encrypted with `ENCRYPTION_KEY` in the `secrets` table |
+| Identity, sessions, auth email | Better Auth in `packages/auth` (`createAuth`), mounted at `/api/auth/*` from `apps/api` |
+
+## Authentication and transactional email
+
+Identity is [Better Auth](https://www.better-auth.com/) with the Prisma adapter, email/password,
+the `bearer` plugin (mobile sends `Authorization: Bearer <session token>`; the API synthesizes the
+session cookie before resolving the session), and the `organization` plugin with team-management
+paths blocked in `blockedAuthPaths`. Signup policy is deployment state (`signupsEnabled`,
+`signupAllowlist`) enforced in an auth hook on sign-up, not frozen at process start.
+
+**Email verification** is enabled with `sendOnSignUp: true` and
+`autoSignInAfterVerification: true`. `requireEmailVerification` stays off so first login is not
+blocked before the user clicks the link; `user.emailVerified` is set when the token is consumed.
+Risky-action gates on `emailVerified` are planned but not wired everywhere yet (see
+`docs/plans/user-journey-audit-2026-09-10.md`).
+
+**Password reset** uses Better Auth's reset flow; a successful reset revokes other sessions
+(`revokeSessionsOnPasswordReset`). The web app exposes forgot-password and `/reset-password`.
+
+**Transactional email** goes through the vendor-neutral `EmailSender` seam
+(`packages/adapter-kit`) and the SMTP adapter (`packages/adapters/src/smtp-email.ts`) when
+`SMTP_URL` is set. `deliverAuthEmail` never throws: without SMTP the API still boots, auth
+responses stay generic (no address enumeration), and the API logs `[auth] …` via
+`onEmailUnavailable`. Copy is Indonesian plain text + HTML (`packages/auth/src/auth-emails.ts`).
+
+**Rate limiting:** Better Auth's limiter is pinned on (`rateLimit.enabled` defaults true) so
+protection does not depend on Better Auth's own `NODE_ENV` detection. Vitest sets
+`AUTH_RATE_LIMIT_ENABLED=false` indirectly via `VITEST=true`. Storage is in-process memory — fine
+for a single API instance; multi-instance self-hosts would need shared `secondaryStorage`.
+Managed AI is separate: `POST /v1/managed-ai/responses` applies a fixed window of 60 requests per
+minute per client IP (`apps/api/src/managed-ai.ts`) before authentication, to cap spend from a
+misbehaving runtime.
+
+**Origins:** `trustedOrigins` for Better Auth are `WEB_ORIGIN`, `BETTER_AUTH_URL`, plus
+`sentrabot://` (production mobile) and, outside production, Expo dev origins. CORS uses
+`isTrustedOrigin` in `apps/api/src/app.ts`, which parses real `Origin` serializations and rejects
+userinfo/path tricks; do not reuse that helper for CSRF decisions where a missing `Origin` must
+not imply trust.
 
 ## Run lifecycle
 
@@ -244,4 +282,19 @@ boundary is needed.
   install regenerates cleanly with 0 sentrabot importers in its lockfile.
 - Consequence: dependency changes in sentrabot must never be validated by installing at the
   Monorepo root, and vice versa; the Monorepo lockfile no longer pins anything for sentrabot.
+
+### 2026-10-09 — auth email, explicit rate limits, and origin hardening
+
+- Problem: operators had no documented path for verification/reset email, Better Auth rate limits
+  could silently follow library `NODE_ENV` heuristics, `/v1/managed-ai/responses` had no spend cap,
+  and permissive CORS/origin checks were easy to misconfigure on production.
+- Decision: wire SMTP through `EmailSender`, enable verification and password reset without
+  `requireEmailVerification`, pin Better Auth `rateLimit.enabled`, add managed-AI IP limiting, and
+  tighten `isTrustedOrigin` / `trustedOrigins` (exact `sentrabot://`, no dev Expo origins in
+  production).
+- Evidence: `packages/auth/src/index.ts`, `apps/api/src/app.ts`, `apps/api/src/managed-ai.ts`,
+  `apps/web/src/pages/ResetPassword.tsx`.
+- Migration consequence: set `SMTP_URL` (and usually `SMTP_FROM`) on any deployment that should
+  deliver auth mail; without it, sign-up and reset still work from the API's perspective but no
+  message is sent and logs record the gap.
 
