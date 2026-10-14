@@ -1,3 +1,4 @@
+import { ActiveSubscriptionCheckoutError } from "@sentrabot/db";
 import { Hono } from "hono";
 
 export interface BillingActor {
@@ -33,12 +34,19 @@ export function createBillingRoutes(dependencies: BillingRouteDependencies): Hon
     const actor = await dependencies.authenticate(context.req.raw);
     if (!actor) return context.json({ error: "Unauthorized" }, 401);
     const referenceId = dependencies.newReference();
-    await dependencies.beginCheckout({
-      userId: actor.userId,
-      workspaceId: actor.workspaceId,
-      provider: "xendit",
-      providerReference: referenceId,
-    });
+    try {
+      await dependencies.beginCheckout({
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "xendit",
+        providerReference: referenceId,
+      });
+    } catch (error) {
+      if (error instanceof ActiveSubscriptionCheckoutError) {
+        return context.json({ error: "Plus subscription is already active" }, 409);
+      }
+      throw error;
+    }
     const checkout = await dependencies.createCheckout({
       referenceId,
       amount: 79_000,

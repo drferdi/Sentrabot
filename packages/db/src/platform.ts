@@ -530,27 +530,45 @@ export async function findPaymentTargetByProviderReference(db: Db, providerRefer
   });
 }
 
+export class ActiveSubscriptionCheckoutError extends Error {
+  constructor() {
+    super("Workspace already has an active Plus subscription");
+    this.name = "ActiveSubscriptionCheckoutError";
+  }
+}
+
+const CHECKOUT_BLOCKED_SUBSCRIPTION_STATES = new Set(["active_plus", "grace_period"]);
+
 export async function beginCheckout(
   db: Db,
   input: { userId: string; workspaceId: string; provider: string; providerReference: string },
 ): Promise<void> {
-  await db.subscription.upsert({
-    where: { workspaceId: input.workspaceId },
-    create: {
-      userId: input.userId,
-      workspaceId: input.workspaceId,
-      planCode: "plus",
-      state: "checkout_pending",
-      provider: input.provider,
-      providerReference: input.providerReference,
-    },
-    update: {
-      planCode: "plus",
-      state: "checkout_pending",
-      provider: input.provider,
-      providerReference: input.providerReference,
-      graceEndsAt: null,
-    },
+  await db.$transaction(async (tx) => {
+    const current = await tx.subscription.findUnique({
+      where: { workspaceId: input.workspaceId },
+      select: { state: true },
+    });
+    if (current && CHECKOUT_BLOCKED_SUBSCRIPTION_STATES.has(current.state)) {
+      throw new ActiveSubscriptionCheckoutError();
+    }
+    await tx.subscription.upsert({
+      where: { workspaceId: input.workspaceId },
+      create: {
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+        planCode: "plus",
+        state: "checkout_pending",
+        provider: input.provider,
+        providerReference: input.providerReference,
+      },
+      update: {
+        planCode: "plus",
+        state: "checkout_pending",
+        provider: input.provider,
+        providerReference: input.providerReference,
+        graceEndsAt: null,
+      },
+    });
   });
 }
 
@@ -564,6 +582,9 @@ interface PlatformTransaction {
     }): Promise<RuntimeLeaseRecord>;
   };
   entitlementState: {
+    findUnique(input: {
+      where: { workspaceId: string };
+    }): Promise<{ state: string } | null>;
     upsert(input: {
       where: { workspaceId: string };
       create: { workspaceId: string; planCode: string; state: string; version: number };
@@ -626,6 +647,11 @@ export function createPlatformDatabase(db: Db): PlatformDatabase {
             upsert: (input) => tx.runtimeLease.upsert(input),
           },
           entitlementState: {
+            findUnique: (input) =>
+              tx.entitlementState.findUnique({
+                where: input.where,
+                select: { state: true },
+              }),
             upsert: (input) => tx.entitlementState.upsert(input),
           },
           outboxEvent: {
@@ -655,11 +681,14 @@ interface PaymentEntitlementOutcome {
   entitlementState: string;
   graceEndsAt: Date | null;
   updateEntitlements: boolean;
+  /** When false, only the subscription row is updated (entitlement already authoritative). */
+  touchEntitlement: boolean;
 }
 
 function resolvePaymentEntitlementOutcome(
   lifecycle: VerifiedPaymentEventInput["lifecycle"],
   currentSubscriptionState: string | undefined,
+  currentEntitlementState: string | undefined,
   now: Date,
 ): PaymentEntitlementOutcome {
   if (lifecycle === "paid") {
@@ -670,9 +699,32 @@ function resolvePaymentEntitlementOutcome(
       entitlementState: "active_plus",
       graceEndsAt: null,
       updateEntitlements: true,
+      touchEntitlement: true,
     };
   }
   if (currentSubscriptionState === "checkout_pending") {
+    if (currentEntitlementState === "active_plus") {
+      return {
+        subscriptionPlanCode: "plus",
+        subscriptionState: "active_plus",
+        entitlementPlanCode: "plus",
+        entitlementState: "active_plus",
+        graceEndsAt: null,
+        updateEntitlements: true,
+        touchEntitlement: false,
+      };
+    }
+    if (currentEntitlementState === "grace_period") {
+      return {
+        subscriptionPlanCode: "plus",
+        subscriptionState: "grace_period",
+        entitlementPlanCode: "free",
+        entitlementState: "grace_period",
+        graceEndsAt: null,
+        updateEntitlements: true,
+        touchEntitlement: false,
+      };
+    }
     return {
       subscriptionPlanCode: "free",
       subscriptionState: "free",
@@ -680,6 +732,7 @@ function resolvePaymentEntitlementOutcome(
       entitlementState: "free",
       graceEndsAt: null,
       updateEntitlements: true,
+      touchEntitlement: true,
     };
   }
   if (currentSubscriptionState === "active_plus") {
@@ -690,6 +743,7 @@ function resolvePaymentEntitlementOutcome(
       entitlementState: "grace_period",
       graceEndsAt: addSevenCalendarDays(now),
       updateEntitlements: true,
+      touchEntitlement: true,
     };
   }
   return {
@@ -699,6 +753,7 @@ function resolvePaymentEntitlementOutcome(
     entitlementState: "free",
     graceEndsAt: null,
     updateEntitlements: false,
+    touchEntitlement: true,
   };
 }
 
@@ -719,9 +774,13 @@ export async function applyVerifiedPaymentEvent(
     const currentSubscription = await tx.subscription.findUnique({
       where: { workspaceId: input.workspaceId },
     });
+    const currentEntitlement = await tx.entitlementState.findUnique({
+      where: { workspaceId: input.workspaceId },
+    });
     const outcome = resolvePaymentEntitlementOutcome(
       input.lifecycle,
       currentSubscription?.state,
+      currentEntitlement?.state,
       input.now,
     );
     await tx.paymentEvent.create({
@@ -750,20 +809,22 @@ export async function applyVerifiedPaymentEvent(
         graceEndsAt: outcome.graceEndsAt,
       },
     });
-    await tx.entitlementState.upsert({
-      where: { workspaceId: input.workspaceId },
-      create: {
-        workspaceId: input.workspaceId,
-        planCode: outcome.entitlementPlanCode,
-        state: outcome.entitlementState,
-        version: 1,
-      },
-      update: {
-        planCode: outcome.entitlementPlanCode,
-        state: outcome.entitlementState,
-        version: { increment: 1 },
-      },
-    });
+    if (outcome.touchEntitlement) {
+      await tx.entitlementState.upsert({
+        where: { workspaceId: input.workspaceId },
+        create: {
+          workspaceId: input.workspaceId,
+          planCode: outcome.entitlementPlanCode,
+          state: outcome.entitlementState,
+          version: 1,
+        },
+        update: {
+          planCode: outcome.entitlementPlanCode,
+          state: outcome.entitlementState,
+          version: { increment: 1 },
+        },
+      });
+    }
     await tx.outboxEvent.create({
       data: {
         dedupeKey: `${input.provider}:${input.providerEventId}`,
