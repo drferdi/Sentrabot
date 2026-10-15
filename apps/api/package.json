@@ -10,8 +10,8 @@
     "test": "vitest run --root ../.. apps/api/src"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.1",
-    "@orpc/server": "^1.15.0",
+    "@hono/node-server": "^2.1.4",
+    "@orpc/server": "^1.15.6",
     "@sentrabot/adapter-kit": "workspace:*",
     "@sentrabot/adapters": "workspace:*",
     "@sentrabot/auth": "workspace:*",
@@ -22,7 +22,7 @@
     "hono": "^4.13.7"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
   }
 }
