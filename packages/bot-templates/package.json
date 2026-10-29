@@ -16,6 +16,6 @@
     "check": "node scripts/check-json.cjs && tsc -p tsconfig.json && node --test tests/*.test.cjs && node dist/src/cli/validate-templates.js"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "typescript": "^7.0.2"
   }
 }
