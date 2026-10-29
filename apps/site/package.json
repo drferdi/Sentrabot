@@ -13,12 +13,12 @@
     "check:seo": "node scripts/check-seo.mjs"
   },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.5.2",
-    "vite": "^6.3.5"
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.5"
   },
   "allowScripts": {
     "esbuild@0.25.12": true
