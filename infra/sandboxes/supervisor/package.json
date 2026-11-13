@@ -10,7 +10,7 @@
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.1",
+    "@hono/node-server": "^2.1.6",
     "@sentrabot/core": "workspace:*",
     "dockerode": "^4.0.7",
     "hono": "^4.13.7",
